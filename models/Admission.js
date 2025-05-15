@@ -5,6 +5,14 @@ const admissionSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  fathersName: {
+    type: String,
+    required: true
+  },
+  mothersName: {
+    type: String,
+    required: true
+  },
   email: {
     type: String,
     required: true
@@ -21,12 +29,20 @@ const admissionSchema = new mongoose.Schema({
     type: Date,
     required: true
   },
+  dateOfAdmission: {
+    type: Date,
+    default: Date.now
+  },
   address: {
     type: String,
     required: true
   },
   education: {
     type: String,
+    required: true
+  },
+  image: {
+    type: String, // Store the image URL or base64
     required: true
   },
   applicationDate: {

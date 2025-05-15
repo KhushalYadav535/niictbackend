@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Admission = require('../models/Admission');
+const mongoose = require('mongoose');
 
 // Get all admissions
 router.get('/', async (req, res) => {
@@ -29,12 +30,16 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   const admission = new Admission({
     name: req.body.name,
+    fathersName: req.body.fathersName,
+    mothersName: req.body.mothersName,
     email: req.body.email,
     phone: req.body.phone,
     course: req.body.course,
     dateOfBirth: req.body.dateOfBirth,
+    dateOfAdmission: req.body.dateOfAdmission,
     address: req.body.address,
-    education: req.body.education
+    education: req.body.education,
+    image: req.body.image
   });
 
   try {
@@ -61,6 +66,37 @@ router.patch('/:id', async (req, res) => {
     res.json(updatedAdmission);
   } catch (err) {
     res.status(400).json({ message: err.message });
+  }
+});
+
+// Delete admission
+router.delete('/:id', async (req, res) => {
+  try {
+    console.log('Attempting to delete admission with ID:', req.params.id);
+    
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      console.log('Invalid admission ID format');
+      return res.status(400).json({ message: 'Invalid admission ID format' });
+    }
+
+    const deletedAdmission = await Admission.findByIdAndDelete(req.params.id);
+    
+    if (!deletedAdmission) {
+      console.log('Admission not found with ID:', req.params.id);
+      return res.status(404).json({ message: 'Admission not found' });
+    }
+
+    console.log('Successfully deleted admission:', deletedAdmission._id);
+    res.json({ 
+      message: 'Admission deleted successfully',
+      deletedId: deletedAdmission._id
+    });
+  } catch (err) {
+    console.error('Error deleting admission:', err);
+    res.status(500).json({ 
+      message: 'Error deleting admission',
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 });
 
