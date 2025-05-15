@@ -11,7 +11,9 @@ app.use(cors());
 app.use(express.json());
 
 // MongoDB Connection
-mongoose.connect('mongodb://127.0.0.1:27017/niict_admissions', {
+const mongoURI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/niict_admissions';
+
+mongoose.connect(mongoURI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 });
