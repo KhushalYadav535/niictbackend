@@ -31,6 +31,7 @@ const admissionSchema = new mongoose.Schema({
   },
   dateOfAdmission: {
     type: Date,
+    required: true,
     default: Date.now
   },
   address: {
@@ -42,8 +43,8 @@ const admissionSchema = new mongoose.Schema({
     required: true
   },
   image: {
-    type: String, // Store the image URL or base64
-    required: true
+    type: String,
+    required: false // Make image optional
   },
   applicationDate: {
     type: Date,
@@ -51,9 +52,11 @@ const admissionSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Pending', 'Approved', 'Rejected'],
-    default: 'Pending'
+    enum: ['pending', 'approved', 'rejected'],
+    default: 'pending'
   }
+}, {
+  timestamps: true
 });
 
 module.exports = mongoose.model('Admission', admissionSchema);
