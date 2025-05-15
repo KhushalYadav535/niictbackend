@@ -19,7 +19,7 @@ async function connectDB() {
 }
 
 // Get all admissions
-app.get('/api/admissions', async (req, res) => {
+app.get('/', async (req, res) => {
   await connectDB();
   try {
     const admissions = await Admission.find();
@@ -30,7 +30,7 @@ app.get('/api/admissions', async (req, res) => {
 });
 
 // Get single admission
-app.get('/api/admissions/:id', async (req, res) => {
+app.get('/:id', async (req, res) => {
   await connectDB();
   try {
     const admission = await Admission.findById(req.params.id);
@@ -44,7 +44,7 @@ app.get('/api/admissions/:id', async (req, res) => {
 });
 
 // Create new admission
-app.post('/api/admissions', async (req, res) => {
+app.post('/', async (req, res) => {
   await connectDB();
   const admission = new Admission({
     name: req.body.name,
@@ -64,7 +64,7 @@ app.post('/api/admissions', async (req, res) => {
 });
 
 // Update admission status
-app.patch('/api/admissions/:id', async (req, res) => {
+app.patch('/:id', async (req, res) => {
   await connectDB();
   try {
     const admission = await Admission.findById(req.params.id);
