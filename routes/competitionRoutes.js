@@ -95,6 +95,22 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// Lookup by roll number with optional DOB check
+router.get('/roll/:rollNumber', async (req, res) => {
+  try {
+    const { rollNumber } = req.params;
+    const { dob } = req.query; // expected as YYYY-MM-DD (same as dateOfBirth stored)
+    const app = await CompetitionApplication.findOne({ rollNumber });
+    if (!app) return res.status(404).json({ message: 'Application not found' });
+    if (dob && String(app.dateOfBirth) !== String(dob)) {
+      return res.status(403).json({ message: 'DOB does not match' });
+    }
+    res.json(app);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // Update payment status
 router.patch('/:id/payment', async (req, res) => {
   try {
