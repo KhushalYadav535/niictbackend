@@ -23,22 +23,22 @@ router.post('/', async (req, res) => {
   try {
     const {
       name,
+      fatherName,
       motherName,
       aadhaar,
       dateOfBirth,
       age,
       school,
-      class: currentClass,
       classPassed,
-      parentName,
       parentPhone,
       address,
       subject,
+      image,
     } = req.body;
 
     // basic server-side validations
-    if (!name || !motherName || !aadhaar || !dateOfBirth || !age || !school || !currentClass || !classPassed || !parentName || !parentPhone || !address) {
-      return res.status(400).json({ message: 'Please fill all required fields' });
+    if (!name || !fatherName || !motherName || !aadhaar || !dateOfBirth || !age || !school || !classPassed || !parentPhone || !address || !image) {
+      return res.status(400).json({ message: 'Please fill all required fields including student image' });
     }
     if (!/^\d{12}$/.test(String(aadhaar))) {
       return res.status(400).json({ message: 'Invalid Aadhaar number' });
@@ -56,17 +56,17 @@ router.post('/', async (req, res) => {
 
     const doc = new CompetitionApplication({
       name,
+      fatherName,
       motherName,
       aadhaar: String(aadhaar),
       dateOfBirth,
       age: ageNum,
       school,
-      class: currentClass,
       classPassed,
-      parentName,
       parentPhone,
       address,
       subject: subject || 'GK',
+      image,
       rollNumber,
       examDate: '20 October 2024',
       examTime: '8:00 AM',

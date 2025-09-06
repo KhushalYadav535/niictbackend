@@ -3,21 +3,21 @@ const mongoose = require('mongoose');
 const CompetitionApplicationSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
+    fatherName: { type: String, required: true, trim: true },
     motherName: { type: String, required: true, trim: true },
     aadhaar: { type: String, required: true, match: /^\d{12}$/ },
     dateOfBirth: { type: String, required: true },
     age: { type: Number, required: true, min: 1, max: 20 },
     school: { type: String, required: true, trim: true },
-    class: { type: String, required: true, trim: true },
     classPassed: {
       type: String,
       required: true,
       enum: ['8th','9th','10th','11th','12th','Diploma','Undergraduate','Graduation'],
     },
-    parentName: { type: String, required: true, trim: true },
     parentPhone: { type: String, required: true, trim: true },
     address: { type: String, required: true, trim: true },
     subject: { type: String, default: 'GK' },
+    image: { type: String, required: true },
 
     // server-generated fields
     rollNumber: { type: String, required: true, unique: true },
