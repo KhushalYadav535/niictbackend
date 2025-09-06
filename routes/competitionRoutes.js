@@ -21,13 +21,13 @@ router.get('/', async (req, res) => {
 // Create application
 router.post('/', async (req, res) => {
   try {
+    console.log('Received request body:', req.body);
     const {
       name,
       fatherName,
       motherName,
       aadhaar,
       dateOfBirth,
-      age,
       school,
       classPassed,
       parentPhone,
@@ -37,15 +37,22 @@ router.post('/', async (req, res) => {
     } = req.body;
 
     // basic server-side validations
-    if (!name || !fatherName || !motherName || !aadhaar || !dateOfBirth || !age || !school || !classPassed || !parentPhone || !address || !image) {
+    if (!name || !fatherName || !motherName || !aadhaar || !dateOfBirth || !school || !classPassed || !parentPhone || !address || !image) {
       return res.status(400).json({ message: 'Please fill all required fields including student image' });
     }
     if (!/^\d{12}$/.test(String(aadhaar))) {
       return res.status(400).json({ message: 'Invalid Aadhaar number' });
     }
-    const ageNum = Number(age);
-    if (Number.isNaN(ageNum) || ageNum > 20 || ageNum < 1) {
-      return res.status(400).json({ message: 'Age must be between 1 and 20' });
+    
+    // Calculate age from date of birth
+    const today = new Date();
+    const birthDate = new Date(dateOfBirth);
+    const age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    const actualAge = monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate()) ? age - 1 : age;
+    
+    if (actualAge > 20) {
+      return res.status(400).json({ message: 'Only candidates aged 20 or below can register' });
     }
     const allowed = ['8th','9th','10th','11th','12th','Diploma','Undergraduate','Graduation'];
     if (!allowed.includes(String(classPassed))) {
@@ -60,7 +67,7 @@ router.post('/', async (req, res) => {
       motherName,
       aadhaar: String(aadhaar),
       dateOfBirth,
-      age: ageNum,
+      age: actualAge,
       school,
       classPassed,
       parentPhone,
