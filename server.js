@@ -47,8 +47,10 @@ mongoose.connection.on('disconnected', () => {
 // Routes
 const admissionRoutes = require('./routes/admissionRoutes');
 const competitionRoutes = require('./routes/competitionRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
 app.use('/api/admissions', admissionRoutes);
 app.use('/api/competition-applications', competitionRoutes);
+app.use('/api', uploadRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
