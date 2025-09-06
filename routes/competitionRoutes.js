@@ -24,6 +24,7 @@ router.post('/', async (req, res) => {
     console.log('Received request body:', req.body);
     const {
       name,
+      phone,
       fatherName,
       motherName,
       aadhaar,
@@ -37,7 +38,7 @@ router.post('/', async (req, res) => {
     } = req.body;
 
     // basic server-side validations
-    if (!name || !fatherName || !motherName || !aadhaar || !dateOfBirth || !school || !classPassed || !parentPhone || !address || !image) {
+    if (!name || !fatherName || !motherName || !aadhaar || !dateOfBirth || !school || !classPassed || (!phone && !parentPhone) || !address || !image) {
       return res.status(400).json({ message: 'Please fill all required fields including student image' });
     }
     if (!/^\d{12}$/.test(String(aadhaar))) {
@@ -54,8 +55,8 @@ router.post('/', async (req, res) => {
     if (actualAge > 20) {
       return res.status(400).json({ message: 'Only candidates aged 20 or below can register' });
     }
-    const allowed = ['8th','9th','10th','11th','12th','Diploma','Undergraduate','Graduation'];
-    if (!allowed.includes(String(classPassed))) {
+    const allowed = ['8th','9th','10th','11th','12th','Diploma','Undergraduate','Graduation','Graduate','Bachelors'];
+    if (!allowed.map(v => v.toLowerCase()).includes(String(classPassed).toLowerCase())) {
       return res.status(400).json({ message: 'Invalid classPassed value' });
     }
 
@@ -63,6 +64,7 @@ router.post('/', async (req, res) => {
 
     const doc = new CompetitionApplication({
       name,
+      phone: phone || parentPhone,
       fatherName,
       motherName,
       aadhaar: String(aadhaar),
@@ -70,7 +72,7 @@ router.post('/', async (req, res) => {
       age: actualAge,
       school,
       classPassed,
-      parentPhone,
+      parentPhone: parentPhone || phone,
       address,
       subject: subject || 'GK',
       image,

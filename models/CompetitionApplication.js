@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const CompetitionApplicationSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
+    phone: { type: String, required: true, trim: true },
     fatherName: { type: String, required: true, trim: true },
     motherName: { type: String, required: true, trim: true },
     aadhaar: { type: String, required: true, match: /^\d{12}$/ },
@@ -12,7 +13,7 @@ const CompetitionApplicationSchema = new mongoose.Schema(
     classPassed: {
       type: String,
       required: true,
-      enum: ['8th','9th','10th','11th','12th','Diploma','Undergraduate','Graduation'],
+      enum: ['8th','9th','10th','11th','12th','Diploma','Undergraduate','Graduation','Graduate','Bachelors'],
     },
     parentPhone: { type: String, required: true, trim: true },
     address: { type: String, required: true, trim: true },
