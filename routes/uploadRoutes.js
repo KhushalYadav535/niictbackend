@@ -45,11 +45,15 @@ const generateSignature = (params) => {
     .map(key => `${key}=${sortedParams[key]}`)
     .join('&');
   
+  console.log('String to sign:', stringToSign);
+  
   // Generate signature
   const signature = crypto
     .createHash('sha1')
-    .update(stringToSign + process.env.CLOUDINARY_API_SECRET || '3CQ8KWmKtuBoXZZsNyoGSA3k-64')
+    .update(stringToSign + (process.env.CLOUDINARY_API_SECRET || '3CQ8KWmKtuBoXZZsNyoGSA3k-64'))
     .digest('hex');
+  
+  console.log('Generated signature:', signature);
   
   return { signature, timestamp };
 };
@@ -61,15 +65,20 @@ router.post('/upload-image', upload.single('image'), async (req, res) => {
       return res.status(400).json({ message: 'No image file provided' });
     }
 
-    // Generate signature
-    const { signature, timestamp } = generateSignature({});
+    // Generate signature with the parameters we'll use
+    const publicId = `student_${Date.now()}`;
+    const folder = 'niict/competition';
+    const { signature, timestamp } = generateSignature({
+      folder: folder,
+      public_id: publicId
+    });
 
     // Upload to Cloudinary
     const result = await new Promise((resolve, reject) => {
       cloudinary.uploader.upload_stream(
         {
-          folder: 'niict/competition',
-          public_id: `student_${Date.now()}`,
+          folder: folder,
+          public_id: publicId,
           signature: signature,
           timestamp: timestamp,
           api_key: process.env.CLOUDINARY_API_KEY || '474711561275295'
