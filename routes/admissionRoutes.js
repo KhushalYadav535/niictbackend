@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Admission = require('../models/Admission');
 const mongoose = require('mongoose');
+const { generateSimpleSerialRollNumber } = require('../utils/rollNumberGenerator');
 
 // Get all admissions
 router.get('/', async (req, res) => {
@@ -28,21 +29,25 @@ router.get('/:id', async (req, res) => {
 
 // Create new admission
 router.post('/', async (req, res) => {
-  const admission = new Admission({
-    name: req.body.name,
-    fathersName: req.body.fathersName,
-    mothersName: req.body.mothersName,
-    email: req.body.email,
-    phone: req.body.phone,
-    course: req.body.course,
-    dateOfBirth: req.body.dateOfBirth,
-    dateOfAdmission: req.body.dateOfAdmission,
-    address: req.body.address,
-    education: req.body.education,
-    image: req.body.image
-  });
-
   try {
+    // Generate serial roll number
+    const rollNumber = await generateSimpleSerialRollNumber();
+    
+    const admission = new Admission({
+      name: req.body.name,
+      fathersName: req.body.fathersName,
+      mothersName: req.body.mothersName,
+      email: req.body.email,
+      phone: req.body.phone,
+      course: req.body.course,
+      dateOfBirth: req.body.dateOfBirth,
+      dateOfAdmission: req.body.dateOfAdmission,
+      address: req.body.address,
+      education: req.body.education,
+      image: req.body.image,
+      rollNumber: rollNumber
+    });
+
     const newAdmission = await admission.save();
     res.status(201).json(newAdmission);
   } catch (err) {

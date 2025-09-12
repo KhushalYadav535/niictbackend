@@ -1,12 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const CompetitionApplication = require('../models/CompetitionApplication');
-
-// util to generate 4-digit roll
-function generateRollNumber() {
-  const timestamp = Date.now();
-  return String(timestamp % 10000).padStart(4, '0');
-}
+const { generateSimpleSerialRollNumber } = require('../utils/rollNumberGenerator');
 
 // List all applications
 router.get('/', async (req, res) => {
@@ -60,7 +55,7 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ message: 'Invalid classPassed value' });
     }
 
-    const rollNumber = generateRollNumber();
+    const rollNumber = await generateSimpleSerialRollNumber();
 
     const doc = new CompetitionApplication({
       name,
@@ -80,7 +75,7 @@ router.post('/', async (req, res) => {
       examDate: '20 October 2024',
       examTime: '8:00 AM',
       reportingTime: '7:00 AM',
-      examCenter: 'SK Modern Intermediate College, Semri, Jaunpur',
+      examCenter: 'SK Modern Intermediate College, Semari, Jaunpur',
       applicationDate: new Date().toLocaleDateString('en-IN'),
       paymentStatus: 'pending',
     });
@@ -104,7 +99,29 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Lookup by roll number with optional DOB check
+// Lookup by Aadhaar number with optional DOB check
+router.get('/aadhaar/:aadhaar', async (req, res) => {
+  try {
+    const { aadhaar } = req.params;
+    const { dob } = req.query; // expected as YYYY-MM-DD (same as dateOfBirth stored)
+    
+    // Validate Aadhaar format (12 digits)
+    if (!/^\d{12}$/.test(aadhaar)) {
+      return res.status(400).json({ message: 'Invalid Aadhaar number format' });
+    }
+    
+    const app = await CompetitionApplication.findOne({ aadhaar });
+    if (!app) return res.status(404).json({ message: 'Application not found' });
+    if (dob && String(app.dateOfBirth) !== String(dob)) {
+      return res.status(403).json({ message: 'DOB does not match' });
+    }
+    res.json(app);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Keep roll number lookup for backward compatibility (deprecated)
 router.get('/roll/:rollNumber', async (req, res) => {
   try {
     const { rollNumber } = req.params;

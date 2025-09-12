@@ -21,7 +21,7 @@ const CompetitionApplicationSchema = new mongoose.Schema(
     image: { type: String, required: true },
 
     // server-generated fields
-    rollNumber: { type: String, required: true, unique: true },
+    rollNumber: { type: String, required: true, unique: true, index: true },
     examDate: { type: String, required: true },
     examTime: { type: String, required: true },
     reportingTime: { type: String, required: true },

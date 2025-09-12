@@ -54,6 +54,12 @@ const admissionSchema = new mongoose.Schema({
     type: String,
     enum: ['pending', 'approved', 'rejected'],
     default: 'pending'
+  },
+  rollNumber: {
+    type: String,
+    required: false,
+    unique: true,
+    index: true
   }
 }, {
   timestamps: true
