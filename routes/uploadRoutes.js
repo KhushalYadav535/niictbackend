@@ -4,11 +4,11 @@ const cloudinary = require('cloudinary').v2;
 const crypto = require('crypto');
 const router = express.Router();
 
-// Configure Cloudinary
+// Configure Cloudinary (require env vars)
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'dijkujvcm',
-  api_key: process.env.CLOUDINARY_API_KEY || '474711561275295',
-  api_secret: process.env.CLOUDINARY_API_SECRET || '3CQ8KWmKtuBoXZZsNyoGSA3k-64'
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
 // Configure multer for memory storage
@@ -35,9 +35,9 @@ router.post('/cloudinary-signature', (req, res) => {
       return res.status(400).json({ message: 'folder and public_id are required' });
     }
 
-    const apiSecret = process.env.CLOUDINARY_API_SECRET || '3CQ8KWmKtuBoXZZsNyoGSA3k-64';
-    const cloudName = process.env.CLOUDINARY_CLOUD_NAME || 'dijkujvcm';
-    const apiKey = process.env.CLOUDINARY_API_KEY || '474711561275295';
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    const apiKey = process.env.CLOUDINARY_API_KEY;
 
     if (!apiSecret || !cloudName || !apiKey) {
       return res.status(500).json({ message: 'Cloudinary environment not configured' });
@@ -86,7 +86,7 @@ const generateSignature = (params) => {
   // Generate signature
   const signature = crypto
     .createHash('sha1')
-    .update(stringToSign + (process.env.CLOUDINARY_API_SECRET || '3CQ8KWmKtuBoXZZsNyoGSA3k-64'))
+    .update(stringToSign + process.env.CLOUDINARY_API_SECRET)
     .digest('hex');
   
   console.log('Generated signature:', signature);
