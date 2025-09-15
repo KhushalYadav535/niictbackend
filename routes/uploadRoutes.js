@@ -4,6 +4,7 @@ const path = require('path');
 const cloudinary = require('cloudinary').v2;
 const crypto = require('crypto');
 const router = express.Router();
+const Image = require('../models/Image');
 
 // Resolve Cloudinary configuration from individual vars or CLOUDINARY_URL
 const parseCloudinaryUrl = (url) => {
@@ -70,6 +71,41 @@ router.post('/upload-local', uploadLocal.single('image'), (req, res) => {
     return res.json({ success: true, secure_url: url, public_id: req.file.filename });
   } catch (error) {
     return res.status(500).json({ message: 'Failed to upload locally', error: error.message });
+  }
+});
+
+// Upload image to MongoDB (Buffer)
+router.post('/upload-image-mongo', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No image file provided' });
+    }
+
+    const doc = await Image.create({
+      data: req.file.buffer,
+      contentType: req.file.mimetype,
+      filename: req.file.originalname || `student_${Date.now()}`,
+      size: req.file.size
+    });
+
+    // Return an id-based URL we can serve
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const url = `${baseUrl}/api/images/${doc._id}`;
+    return res.json({ success: true, secure_url: url, public_id: String(doc._id) });
+  } catch (error) {
+    return res.status(500).json({ message: 'Failed to upload to MongoDB', error: error.message });
+  }
+});
+
+// Serve image by id
+router.get('/images/:id', async (req, res) => {
+  try {
+    const img = await Image.findById(req.params.id);
+    if (!img) return res.status(404).send('Not found');
+    res.set('Content-Type', img.contentType);
+    return res.send(img.data);
+  } catch (error) {
+    return res.status(500).send('Error');
   }
 });
 
