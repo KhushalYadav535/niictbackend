@@ -1,12 +1,23 @@
 const crypto = require('crypto');
 
 module.exports = async (req, res) => {
+  // Basic CORS headers for serverless function
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Method Not Allowed' });
   }
 
   try {
-    const { folder, public_id } = req.body || {};
+    // Support both parsed JSON and raw string body
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    const { folder, public_id } = body;
     if (!folder || !public_id) {
       return res.status(400).json({ message: 'folder and public_id are required' });
     }

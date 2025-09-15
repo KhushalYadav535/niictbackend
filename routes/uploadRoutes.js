@@ -1,14 +1,32 @@
 const express = require('express');
 const multer = require('multer');
+const path = require('path');
 const cloudinary = require('cloudinary').v2;
 const crypto = require('crypto');
 const router = express.Router();
 
-// Configure Cloudinary (require env vars)
+// Resolve Cloudinary configuration from individual vars or CLOUDINARY_URL
+const parseCloudinaryUrl = (url) => {
+  try {
+    const match = String(url || '').match(/^cloudinary:\/\/(.*?):(.*?)@(.*?)$/);
+    if (!match) return {};
+    const [, apiKey, apiSecret, cloudName] = match;
+    return { apiKey, apiSecret, cloudName };
+  } catch (_) {
+    return {};
+  }
+};
+
+const fromUrl = parseCloudinaryUrl(process.env.CLOUDINARY_URL);
+const resolvedCloudName = process.env.CLOUDINARY_CLOUD_NAME || fromUrl.cloudName;
+const resolvedApiKey = process.env.CLOUDINARY_API_KEY || fromUrl.apiKey;
+const resolvedApiSecret = process.env.CLOUDINARY_API_SECRET || fromUrl.apiSecret;
+
+// Configure Cloudinary
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+  cloud_name: resolvedCloudName,
+  api_key: resolvedApiKey,
+  api_secret: resolvedApiSecret
 });
 
 // Configure multer for memory storage
@@ -27,6 +45,34 @@ const upload = multer({
   }
 });
 
+// Local disk storage for fallback
+const localStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadsPath = path.join(__dirname, '..', 'uploads');
+    cb(null, uploadsPath);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '.jpg');
+    const safeName = `student_${Date.now()}${ext}`;
+    cb(null, safeName);
+  }
+});
+const uploadLocal = multer({ storage: localStorage });
+
+// Local upload endpoint
+router.post('/upload-local', uploadLocal.single('image'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No image file provided' });
+    }
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const url = `${baseUrl}/uploads/${req.file.filename}`;
+    return res.json({ success: true, secure_url: url, public_id: req.file.filename });
+  } catch (error) {
+    return res.status(500).json({ message: 'Failed to upload locally', error: error.message });
+  }
+});
+
 // Signature endpoint for direct-to-Cloudinary uploads
 router.post('/cloudinary-signature', (req, res) => {
   try {
@@ -35,9 +81,9 @@ router.post('/cloudinary-signature', (req, res) => {
       return res.status(400).json({ message: 'folder and public_id are required' });
     }
 
-    const apiSecret = process.env.CLOUDINARY_API_SECRET;
-    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-    const apiKey = process.env.CLOUDINARY_API_KEY;
+    const apiSecret = resolvedApiSecret;
+    const cloudName = resolvedCloudName;
+    const apiKey = resolvedApiKey;
 
     if (!apiSecret || !cloudName || !apiKey) {
       return res.status(500).json({ message: 'Cloudinary environment not configured' });
@@ -86,7 +132,7 @@ const generateSignature = (params) => {
   // Generate signature
   const signature = crypto
     .createHash('sha1')
-    .update(stringToSign + process.env.CLOUDINARY_API_SECRET)
+    .update(stringToSign + (resolvedApiSecret || process.env.CLOUDINARY_API_SECRET || ''))
     .digest('hex');
   
   console.log('Generated signature:', signature);

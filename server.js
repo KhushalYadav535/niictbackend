@@ -1,6 +1,8 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 const app = express();
@@ -51,6 +53,17 @@ const uploadRoutes = require('./routes/uploadRoutes');
 app.use('/api/admissions', admissionRoutes);
 app.use('/api/competition-applications', competitionRoutes);
 app.use('/api', uploadRoutes);
+
+// Ensure uploads directory exists and serve it statically
+const uploadsDir = path.join(__dirname, 'uploads');
+try {
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+} catch (e) {
+  console.error('Failed to ensure uploads directory:', e);
+}
+app.use('/uploads', express.static(uploadsDir));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
