@@ -108,6 +108,9 @@ router.post('/', async (req, res) => {
 // GET /api/competition-applications
 router.get('/', async (req, res) => {
   try {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     const list = await CompetitionApplication.find().sort({ createdAt: -1 });
     res.json(list);
   } catch (err) {
