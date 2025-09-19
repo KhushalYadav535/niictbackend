@@ -66,6 +66,7 @@ router.post('/', async (req, res) => {
           classPassed,
           image,
           rollNumber,
+      paymentStatus: 'pending',
           // Provide exam details to match UI expectations
           examDate: '20 October 2024',
           examTime: '8:00 AM',
@@ -101,6 +102,46 @@ router.post('/', async (req, res) => {
     }
     console.error('Competition application create error:', err);
     return res.status(500).json({ message: 'Failed to create application', error: err.message });
+  }
+});
+
+// GET /api/competition-applications
+router.get('/', async (req, res) => {
+  try {
+    const list = await CompetitionApplication.find().sort({ createdAt: -1 });
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch applications', error: err.message });
+  }
+});
+
+// DELETE /api/competition-applications/:id
+router.delete('/:id', async (req, res) => {
+  try {
+    const deleted = await CompetitionApplication.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ message: 'Application not found' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to delete application', error: err.message });
+  }
+});
+
+// PATCH /api/competition-applications/:id/payment
+router.patch('/:id/payment', async (req, res) => {
+  try {
+    const { status } = req.body || {};
+    if (!['pending', 'verified'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid payment status' });
+    }
+    const updated = await CompetitionApplication.findByIdAndUpdate(
+      req.params.id,
+      { $set: { paymentStatus: status } },
+      { new: true }
+    );
+    if (!updated) return res.status(404).json({ message: 'Application not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to update payment status', error: err.message });
   }
 });
 

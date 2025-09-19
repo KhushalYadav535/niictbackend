@@ -15,6 +15,7 @@ const CompetitionApplicationSchema = new mongoose.Schema(
     classPassed: { type: String, required: true },
     image: { type: String, required: true },
     rollNumber: { type: String, required: true, unique: true },
+    paymentStatus: { type: String, enum: ['pending', 'verified'], default: 'pending' },
     // Exam details (store simple strings to match UI text directly)
     examDate: { type: String },
     examTime: { type: String },
