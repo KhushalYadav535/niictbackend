@@ -1,169 +1,106 @@
 const express = require('express');
 const router = express.Router();
 const CompetitionApplication = require('../models/CompetitionApplication');
-const { generateSimpleSerialRollNumber } = require('../utils/rollNumberGenerator');
+const Counter = require('../models/Counter');
 
-// List all applications
-router.get('/', async (req, res) => {
-  try {
-    const apps = await CompetitionApplication.find().sort({ createdAt: -1 });
-    res.json(apps);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Create application
+// POST /api/competition-applications
 router.post('/', async (req, res) => {
   try {
-    console.log('Received request body:', req.body);
     const {
       name,
-      phone,
       fatherName,
       motherName,
-      aadhaar,
-      dateOfBirth,
+      phone,
       school,
-      classPassed,
       parentPhone,
       address,
       subject,
-      image,
-    } = req.body;
-
-    // basic server-side validations
-    if (!name || !fatherName || !motherName || !aadhaar || !dateOfBirth || !school || !classPassed || (!phone && !parentPhone) || !address || !image) {
-      return res.status(400).json({ message: 'Please fill all required fields including student image' });
-    }
-    if (!/^\d{12}$/.test(String(aadhaar))) {
-      return res.status(400).json({ message: 'Invalid Aadhaar number' });
-    }
-    
-    // Calculate age from date of birth
-    const today = new Date();
-    const birthDate = new Date(dateOfBirth);
-    const age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    const actualAge = monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate()) ? age - 1 : age;
-    
-    if (actualAge > 20) {
-      return res.status(400).json({ message: 'Only candidates aged 20 or below can register' });
-    }
-    const allowed = ['8th','9th','10th','11th','12th','Diploma','Undergraduate','Graduation','Graduate','Bachelors'];
-    if (!allowed.map(v => v.toLowerCase()).includes(String(classPassed).toLowerCase())) {
-      return res.status(400).json({ message: 'Invalid classPassed value' });
-    }
-
-    const rollNumber = await generateSimpleSerialRollNumber();
-
-    const doc = new CompetitionApplication({
-      name,
-      phone: phone || parentPhone,
-      fatherName,
-      motherName,
-      aadhaar: String(aadhaar),
+      aadhaar,
       dateOfBirth,
-      age: actualAge,
-      school,
       classPassed,
-      parentPhone: parentPhone || phone,
-      address,
-      subject: subject || 'GK',
-      image,
-      rollNumber,
-      examDate: '20 October 2024',
-      examTime: '8:00 AM',
-      reportingTime: '7:00 AM',
-      examCenter: 'SK Modern Intermediate College, Semari, Jaunpur',
-      applicationDate: new Date().toLocaleDateString('en-IN'),
-      paymentStatus: 'pending',
-    });
+      image
+    } = req.body || {};
 
-    const saved = await doc.save();
-    res.status(201).json(saved);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Failed to create application' });
-  }
-});
-
-// Get single application
-router.get('/:id', async (req, res) => {
-  try {
-    const app = await CompetitionApplication.findById(req.params.id);
-    if (!app) return res.status(404).json({ message: 'Application not found' });
-    res.json(app);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Lookup by Aadhaar number with optional DOB check
-router.get('/aadhaar/:aadhaar', async (req, res) => {
-  try {
-    const { aadhaar } = req.params;
-    const { dob } = req.query; // expected as YYYY-MM-DD (same as dateOfBirth stored)
-    
-    // Validate Aadhaar format (12 digits)
-    if (!/^\d{12}$/.test(aadhaar)) {
-      return res.status(400).json({ message: 'Invalid Aadhaar number format' });
+    // Basic validation aligned with frontend checks
+    if (!name || !fatherName || !motherName || !phone || !school || !parentPhone || !address || !aadhaar || !dateOfBirth || !classPassed || !image) {
+      return res.status(400).json({ message: 'Missing required fields' });
     }
-    
-    const app = await CompetitionApplication.findOne({ aadhaar });
-    if (!app) return res.status(404).json({ message: 'Application not found' });
-    if (dob && String(app.dateOfBirth) !== String(dob)) {
-      return res.status(403).json({ message: 'DOB does not match' });
-    }
-    res.json(app);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
 
-// Keep roll number lookup for backward compatibility (deprecated)
-router.get('/roll/:rollNumber', async (req, res) => {
-  try {
-    const { rollNumber } = req.params;
-    const { dob } = req.query; // expected as YYYY-MM-DD (same as dateOfBirth stored)
-    const app = await CompetitionApplication.findOne({ rollNumber });
-    if (!app) return res.status(404).json({ message: 'Application not found' });
-    if (dob && String(app.dateOfBirth) !== String(dob)) {
-      return res.status(403).json({ message: 'DOB does not match' });
+    // Generate sequential roll number starting from 1001 (atomic)
+    const counterId = 'competition_roll';
+    // Ensure counter exists and is aligned with current max rollNumber
+    let counter = await Counter.findById(counterId);
+    if (!counter) {
+      const maxAgg = await CompetitionApplication.aggregate([
+        { $project: { rollNumInt: { $toInt: '$rollNumber' } } },
+        { $sort: { rollNumInt: -1 } },
+        { $limit: 1 }
+      ]);
+      const maxExisting = (maxAgg && maxAgg[0] && maxAgg[0].rollNumInt) ? maxAgg[0].rollNumInt : 1000;
+      const baseSeq = Math.max(0, maxExisting - 1000);
+      try {
+        counter = await Counter.create({ _id: counterId, seq: baseSeq });
+      } catch (_) {
+        counter = await Counter.findById(counterId);
+      }
     }
-    res.json(app);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
 
-// Update payment status
-router.patch('/:id/payment', async (req, res) => {
-  try {
-    const { status } = req.body;
-    if (!['pending', 'verified'].includes(status)) {
-      return res.status(400).json({ message: 'Invalid status' });
+    // Attempt to persist with a short retry loop to avoid duplicate roll numbers
+    let appDoc;
+    let lastErr;
+    for (let i = 0; i < 10; i++) {
+      const updated = await Counter.findByIdAndUpdate(counterId, { $inc: { seq: 1 } }, { new: true });
+      const rollNumber = String(1000 + (Number(updated.seq) || 0));
+      try {
+        appDoc = await CompetitionApplication.create({
+          name,
+          fatherName,
+          motherName,
+          phone,
+          school,
+          parentPhone,
+          address,
+          subject: subject || 'GK',
+          aadhaar,
+          dateOfBirth: new Date(dateOfBirth),
+          classPassed,
+          image,
+          rollNumber,
+          // Provide exam details to match UI expectations
+          examDate: '20 October 2024',
+          examTime: '8:00 AM',
+          reportingTime: '7:00 AM',
+      examCenter: 'SK Modern Intermediate College, Semari, Jaunpur'
+        });
+        lastErr = undefined;
+        break;
+      } catch (e) {
+        lastErr = e;
+        if (!(e && e.code === 11000)) {
+          // Non-duplicate error -> fail immediately
+          break;
+        }
+        // else loop continues to try next number
+      }
     }
-    const updated = await CompetitionApplication.findByIdAndUpdate(
-      req.params.id,
-      { paymentStatus: status },
-      { new: true }
-    );
-    if (!updated) return res.status(404).json({ message: 'Application not found' });
-    res.json(updated);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
+    if (!appDoc) {
+      if (lastErr && lastErr.code === 11000) {
+        return res.status(409).json({ message: 'Duplicate roll number, please retry', error: lastErr.message });
+      }
+      throw lastErr || new Error('Unknown error creating application');
+    }
 
-// Delete application
-router.delete('/:id', async (req, res) => {
-  try {
-    const app = await CompetitionApplication.findByIdAndDelete(req.params.id);
-    if (!app) return res.status(404).json({ message: 'Application not found' });
-    res.json({ message: 'Deleted', id: req.params.id });
+    return res.status(201).json(appDoc);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    // Known errors
+    if (err && err.code === 11000) {
+      return res.status(409).json({ message: 'Duplicate roll number, please retry', error: err.message });
+    }
+    if (err && (err.name === 'ValidationError' || err.name === 'CastError')) {
+      return res.status(400).json({ message: 'Invalid data provided', error: err.message });
+    }
+    console.error('Competition application create error:', err);
+    return res.status(500).json({ message: 'Failed to create application', error: err.message });
   }
 });
 
