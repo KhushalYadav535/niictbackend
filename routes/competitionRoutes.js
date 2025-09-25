@@ -22,7 +22,7 @@ router.post('/', async (req, res) => {
     } = req.body || {};
 
     // Basic validation aligned with frontend checks
-    if (!name || !fatherName || !motherName || !phone || !school || !parentPhone || !address || !aadhaar || !dateOfBirth || !classPassed || !image) {
+    if (!name || !fatherName || !motherName || !phone || !school || !address || !dateOfBirth || !classPassed || !image) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
@@ -126,6 +126,139 @@ router.delete('/:id', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ message: 'Failed to delete application', error: err.message });
+  }
+});
+
+// GET /api/competition-applications/aadhaar/:aadhaar
+router.get('/aadhaar/:aadhaar', async (req, res) => {
+  try {
+    const { aadhaar } = req.params;
+    const { dob } = req.query;
+    
+    // Build query object
+    const query = { aadhaar };
+    
+    // If DOB is provided, add it to the query
+    if (dob) {
+      // Convert DOB string to Date object for comparison
+      const dobDate = new Date(dob);
+      query.dateOfBirth = {
+        $gte: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate()),
+        $lt: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate() + 1)
+      };
+    }
+    
+    const application = await CompetitionApplication.findOne(query);
+    
+    if (!application) {
+      return res.status(404).json({ message: 'Application not found' });
+    }
+    
+    res.json(application);
+  } catch (err) {
+    console.error('Aadhaar lookup error:', err);
+    res.status(500).json({ message: 'Failed to lookup application', error: err.message });
+  }
+});
+
+// GET /api/competition-applications/mobile/:mobile
+router.get('/mobile/:mobile', async (req, res) => {
+  try {
+    const { mobile } = req.params;
+    const { dob } = req.query;
+    
+    if (!dob) {
+      return res.status(400).json({ message: 'Date of birth is required for mobile search' });
+    }
+    
+    // Build query object
+    const query = { phone: mobile };
+    
+    // Convert DOB string to Date object for comparison
+    const dobDate = new Date(dob);
+    query.dateOfBirth = {
+      $gte: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate()),
+      $lt: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate() + 1)
+    };
+    
+    const application = await CompetitionApplication.findOne(query);
+    
+    if (!application) {
+      return res.status(404).json({ message: 'Application not found' });
+    }
+    
+    res.json(application);
+  } catch (err) {
+    console.error('Mobile lookup error:', err);
+    res.status(500).json({ message: 'Failed to lookup application', error: err.message });
+  }
+});
+
+// GET /api/competition-applications/name/:name
+router.get('/name/:name', async (req, res) => {
+  try {
+    const { name } = req.params;
+    const { dob } = req.query;
+    
+    if (!dob) {
+      return res.status(400).json({ message: 'Date of birth is required for name search' });
+    }
+    
+    // Build query object - case insensitive search
+    const query = { 
+      name: { $regex: decodeURIComponent(name), $options: 'i' }
+    };
+    
+    // Convert DOB string to Date object for comparison
+    const dobDate = new Date(dob);
+    query.dateOfBirth = {
+      $gte: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate()),
+      $lt: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate() + 1)
+    };
+    
+    const application = await CompetitionApplication.findOne(query);
+    
+    if (!application) {
+      return res.status(404).json({ message: 'Application not found' });
+    }
+    
+    res.json(application);
+  } catch (err) {
+    console.error('Name lookup error:', err);
+    res.status(500).json({ message: 'Failed to lookup application', error: err.message });
+  }
+});
+
+// GET /api/competition-applications/name-phone
+router.get('/name-phone', async (req, res) => {
+  try {
+    const { name, phone } = req.query;
+    
+    if (!name || !phone) {
+      return res.status(400).json({ message: 'Both name and phone number are required' });
+    }
+    
+    // Validate phone format
+    if (!/^\d{10}$/.test(phone)) {
+      return res.status(400).json({ message: 'Please enter a valid 10-digit phone number' });
+    }
+    
+    // Build query object - case insensitive name search with exact phone match
+    const query = { 
+      name: { $regex: decodeURIComponent(name), $options: 'i' },
+      phone: phone
+    };
+    
+    const application = await CompetitionApplication.findOne(query);
+    
+    if (!application) {
+      return res.status(404).json({ message: 'Application not found' });
+    }
+    
+    res.json(application);
+  } catch (err) {
+    console.error('Name-phone lookup error:', err);
+    res.status(500).json({ message: 'Failed to lookup application', error: err.message });
   }
 });
 
