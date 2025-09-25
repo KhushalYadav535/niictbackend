@@ -68,10 +68,10 @@ router.post('/', async (req, res) => {
           rollNumber,
       paymentStatus: 'pending',
           // Provide exam details to match UI expectations
-          examDate: '20 October 2024',
-          examTime: '8:00 AM',
-          reportingTime: '7:00 AM',
-      examCenter: 'SK Modern Intermediate College, Semari, Jaunpur'
+          examDate: '12 October 2025',
+          examTime: '10:00 AM',
+          reportingTime: '8:00 AM',
+          examCenter: 'S K Modern Intermediate College Semari Janghai Jaunpur'
         });
         lastErr = undefined;
         break;
