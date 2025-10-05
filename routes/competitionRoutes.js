@@ -22,7 +22,7 @@ router.post('/', async (req, res) => {
     } = req.body || {};
 
     // Basic validation aligned with frontend checks
-    if (!name || !fatherName || !motherName || !phone || !school || !address || !dateOfBirth || !classPassed || !image) {
+    if (!name || !fatherName || !motherName || !phone || !school || !address || !dateOfBirth || !classPassed) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
@@ -171,14 +171,28 @@ router.get('/mobile/:mobile', async (req, res) => {
       return res.status(400).json({ message: 'Date of birth is required for mobile search' });
     }
     
-    // Build query object
-    const query = { phone: mobile };
+    // Normalize mobile number for search (remove leading zero if present)
+    const normalizedMobile = mobile.startsWith('0') ? mobile.substring(1) : mobile;
     
     // Convert DOB string to Date object for comparison
     const dobDate = new Date(dob);
-    query.dateOfBirth = {
+    const dobRange = {
       $gte: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate()),
       $lt: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate() + 1)
+    };
+    
+    // Build query object - search with or without leading 0
+    const query = { 
+      $and: [
+        { dateOfBirth: dobRange },
+        {
+          $or: [
+            { phone: mobile },
+            { phone: normalizedMobile },
+            { phone: '0' + normalizedMobile }
+          ]
+        }
+      ]
     };
     
     const application = await CompetitionApplication.findOne(query);
@@ -238,15 +252,22 @@ router.get('/name-phone', async (req, res) => {
       return res.status(400).json({ message: 'Both name and phone number are required' });
     }
     
-    // Validate phone format
-    if (!/^\d{10}$/.test(phone)) {
-      return res.status(400).json({ message: 'Please enter a valid 10-digit phone number' });
+    // Validate phone format - accept 10 or 11 digits (with or without leading 0)
+    if (!/^\d{10,11}$/.test(phone)) {
+      return res.status(400).json({ message: 'Please enter a valid 10 or 11-digit phone number' });
     }
     
-    // Build query object - case insensitive name search with exact phone match
+    // Normalize phone number for search (remove leading zero if present)
+    const normalizedPhone = phone.startsWith('0') ? phone.substring(1) : phone;
+    
+    // Build query object - case insensitive name search with phone match (with or without leading 0)
     const query = { 
       name: { $regex: decodeURIComponent(name), $options: 'i' },
-      phone: phone
+      $or: [
+        { phone: phone },
+        { phone: normalizedPhone },
+        { phone: '0' + normalizedPhone }
+      ]
     };
     
     const application = await CompetitionApplication.findOne(query);

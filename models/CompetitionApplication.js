@@ -13,7 +13,7 @@ const CompetitionApplicationSchema = new mongoose.Schema(
     aadhaar: { type: String, required: false },
     dateOfBirth: { type: Date, required: true },
     classPassed: { type: String, required: true },
-    image: { type: String, required: true },
+    image: { type: String, required: false },
     rollNumber: { type: String, required: true, unique: true },
     paymentStatus: { type: String, enum: ['pending', 'verified'], default: 'pending' },
     // Exam details (store simple strings to match UI text directly)
