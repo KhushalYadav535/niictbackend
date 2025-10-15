@@ -50,9 +50,11 @@ mongoose.connection.on('disconnected', () => {
 const admissionRoutes = require('./routes/admissionRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const competitionRoutes = require('./routes/competitionRoutes');
+const resultRoutes = require('./routes/resultRoutes');
 app.use('/api/admissions', admissionRoutes);
 app.use('/api', uploadRoutes);
 app.use('/api/competition-applications', competitionRoutes);
+app.use('/api/results', resultRoutes);
 
 // Ensure uploads directory exists and serve it statically
 const uploadsDir = path.join(__dirname, 'uploads');
