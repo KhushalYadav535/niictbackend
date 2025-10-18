@@ -145,6 +145,37 @@ router.get('/top/:limit?', async (req, res) => {
   }
 });
 
+// Get top 3 students by subject (public endpoint for result display)
+router.get('/top3/:subject?', async (req, res) => {
+  try {
+    const { subject } = req.params;
+    
+    let query = { isPublished: true };
+    if (subject && ['GK', 'Computer', 'Both'].includes(subject)) {
+      query.subject = subject;
+    }
+    
+    const top3Results = await Result.find(query)
+      .sort({ rank: 1 })
+      .limit(3)
+      .select('name fatherName rollNumber marks rank subject')
+      .lean();
+
+    res.json({
+      success: true,
+      data: top3Results,
+      count: top3Results.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching top 3 results:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error' 
+    });
+  }
+});
+
 // Create/Update result (admin only)
 router.post('/create', async (req, res) => {
   try {
