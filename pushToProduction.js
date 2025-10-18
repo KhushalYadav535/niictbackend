@@ -1,249 +1,114 @@
-const mongoose = require('mongoose');
-const Result = require('./models/Result');
-const CompetitionApplication = require('./models/CompetitionApplication');
-const Admission = require('./models/Admission');
-require('dotenv').config();
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
-// MongoDB Connection
-const mongoURI = process.env.MONGODB_URI || 'mongodb+srv://khushalyadav535:FtYH71HzwoICm90w@cluster0.osata.mongodb.net/niict_admissions?retryWrites=true&w=majority&appName=Cluster0';
-
-const mongoOptions = {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-  serverSelectionTimeoutMS: 5000,
-  socketTimeoutMS: 45000,
-};
-
-// Function to push results to production
-const pushResultsToProduction = async () => {
-  console.log('\n🚀 Pushing Results to Production...');
-  
+// Function to push local data to production
+const pushToProduction = async () => {
   try {
-    // Connect to local database
-    await mongoose.connect(mongoURI, mongoOptions);
-    console.log('✅ Connected to local MongoDB');
-
-    // Get all results from local database
-    const localResults = await Result.find({});
-    console.log(`Found ${localResults.length} results in local database`);
-
-    if (localResults.length === 0) {
-      console.log('❌ No results found in local database');
+    console.log('Getting all local results...');
+    
+    // Get all local results
+    const localResponse = await fetch('http://localhost:5000/api/results/all');
+    const localResult = await localResponse.json();
+    
+    if (!localResult.success) {
+      console.error('Failed to get local results:', localResult.message);
       return;
     }
-
-    // Prepare data for production API
-    const resultsData = localResults.map(result => ({
-      rollNumber: result.rollNumber,
-      name: result.name,
-      fatherName: result.fatherName,
-      motherName: result.motherName,
-      subject: result.subject,
-      marks: result.marks,
-      rank: result.rank,
-      examDate: result.examDate,
-      status: result.status,
-      class: result.class,
-      school: result.school,
-      phone: result.phone,
-      address: result.address,
-      totalMarks: result.totalMarks,
-      percentage: result.percentage,
-      grade: result.grade,
-      remarks: result.remarks,
-      isPublished: result.isPublished,
-      publishedAt: result.publishedAt,
-      createdBy: result.createdBy
-    }));
-
-    // Push to production using bulk create API
-    const https = require('https');
-    const data = JSON.stringify({ results: resultsData });
     
-    const requestOptions = {
-      hostname: 'niictbackend.onrender.com',
-      port: 443,
-      path: '/api/results/bulk-create',
+    const localResults = localResult.data;
+    console.log(`Found ${localResults.length} local results to push`);
+    
+    if (localResults.length === 0) {
+      console.log('No local results found to push');
+      return;
+    }
+    
+    // Show first 5 results that will be pushed
+    console.log('\nFirst 5 results to be pushed:');
+    localResults.slice(0, 5).forEach((result, index) => {
+      console.log(`${index + 1}. ${result.rollNumber} - ${result.name} - ${result.marks} marks - Rank ${result.rank}`);
+    });
+    
+    console.log(`\nPushing ${localResults.length} results to production...`);
+    
+    // Push to production using bulk create
+    const productionResponse = await fetch('https://niictbackend.onrender.com/api/results/bulk-create', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': data.length
-      }
-    };
-
-    const response = await new Promise((resolve, reject) => {
-      const req = https.request(requestOptions, (res) => {
-        let responseData = '';
-        res.on('data', (chunk) => responseData += chunk);
-        res.on('end', () => {
-          try {
-            resolve(JSON.parse(responseData));
-          } catch (e) {
-            reject(e);
-          }
-        });
-      });
-
-      req.on('error', reject);
-      req.write(data);
-      req.end();
+      },
+      body: JSON.stringify({ results: localResults })
     });
-
-    if (response.success) {
-      console.log(`✅ Successfully pushed ${response.created} results to production`);
-      if (response.errors && response.errors.length > 0) {
-        console.log(`⚠️  ${response.errors.length} errors occurred during push`);
-        response.errors.forEach(error => {
-          console.log(`   - ${error.rollNumber}: ${error.error}`);
-        });
+    
+    if (productionResponse.ok) {
+      const productionResult = await productionResponse.json();
+      console.log(`Successfully pushed ${productionResult.created} results to production`);
+      
+      if (productionResult.errors && productionResult.errors.length > 0) {
+        console.log(`Errors: ${productionResult.errors.length}`);
+        console.log('First 5 errors:', productionResult.errors.slice(0, 5));
       }
     } else {
-      console.log(`❌ Failed to push results: ${response.message}`);
+      const errorData = await productionResponse.json();
+      console.error('Failed to push to production:', errorData.message);
+      return;
     }
-
-  } catch (error) {
-    console.error('❌ Error pushing results to production:', error.message);
-  }
-};
-
-// Function to publish results on production
-const publishResultsOnProduction = async () => {
-  console.log('\n📢 Publishing Results on Production...');
-  
-  try {
-    const https = require('https');
-    const data = JSON.stringify({ publishAll: true });
     
-    const publishOptions = {
-      hostname: 'niictbackend.onrender.com',
-      port: 443,
-      path: '/api/results/publish',
+    // Publish all results on production
+    console.log('\nPublishing all results on production...');
+    const publishResponse = await fetch('https://niictbackend.onrender.com/api/results/publish', {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': data.length
-      }
-    };
-
-    const response = await new Promise((resolve, reject) => {
-      const req = https.request(publishOptions, (res) => {
-        let responseData = '';
-        res.on('data', (chunk) => responseData += chunk);
-        res.on('end', () => {
-          try {
-            resolve(JSON.parse(responseData));
-          } catch (e) {
-            reject(e);
-          }
-        });
-      });
-
-      req.on('error', reject);
-      req.write(data);
-      req.end();
+      },
+      body: JSON.stringify({ publishAll: true })
     });
-
-    if (response.success) {
-      console.log(`✅ Successfully published ${response.modifiedCount} results on production`);
-    } else {
-      console.log(`❌ Failed to publish results: ${response.message}`);
-    }
-
-  } catch (error) {
-    console.error('❌ Error publishing results on production:', error.message);
-  }
-};
-
-// Function to get production statistics
-const getProductionStats = async () => {
-  console.log('\n📊 Production Statistics:');
-  
-  try {
-    const https = require('https');
     
-    const statsOptions = {
-      hostname: 'niictbackend.onrender.com',
-      port: 443,
-      path: '/api/results/stats',
-      method: 'GET'
-    };
-
-    const response = await new Promise((resolve, reject) => {
-      const req = https.request(statsOptions, (res) => {
-        let responseData = '';
-        res.on('data', (chunk) => responseData += chunk);
-        res.on('end', () => {
-          try {
-            resolve(JSON.parse(responseData));
-          } catch (e) {
-            reject(e);
-          }
-        });
-      });
-
-      req.on('error', reject);
-      req.end();
-    });
-
-    if (response.success) {
-      const stats = response.data;
-      console.log(`📝 Total Results: ${stats.totalResults}`);
-      console.log(`📢 Published Results: ${stats.publishedResults}`);
-      console.log(`📋 Unpublished Results: ${stats.unpublishedResults}`);
-      
-      if (stats.subjectStats && stats.subjectStats.length > 0) {
-        console.log('\n📊 Subject-wise Statistics:');
-        stats.subjectStats.forEach(stat => {
-          console.log(`   ${stat._id}: ${stat.totalStudents} students, Avg: ${stat.averageMarks.toFixed(2)} marks`);
-        });
+    if (publishResponse.ok) {
+      const publishResult = await publishResponse.json();
+      console.log(`Published ${publishResult.modifiedCount} results on production`);
+    } else {
+      const errorData = await publishResponse.json();
+      console.error('Failed to publish on production:', errorData.message);
+    }
+    
+    // Test SK1004 on production
+    console.log('\nTesting SK1004 on production...');
+    const testResponse = await fetch('https://niictbackend.onrender.com/api/results/search/SK1004');
+    if (testResponse.ok) {
+      const testResult = await testResponse.json();
+      if (testResult.success) {
+        console.log('✅ SK1004 found on production:', testResult.data.name, '-', testResult.data.marks, 'marks - Rank', testResult.data.rank);
+      } else {
+        console.log('❌ SK1004 not found on production:', testResult.message);
       }
     } else {
-      console.log(`❌ Failed to get production stats: ${response.message}`);
+      console.log('❌ Failed to test SK1004 on production');
     }
-
+    
+    // Test AJAY on production
+    console.log('\nTesting AJAY (SK1158) on production...');
+    const ajayResponse = await fetch('https://niictbackend.onrender.com/api/results/search/SK1158');
+    if (ajayResponse.ok) {
+      const ajayResult = await ajayResponse.json();
+      if (ajayResult.success) {
+        console.log('✅ AJAY found on production:', ajayResult.data.name, '-', ajayResult.data.marks, 'marks - Rank', ajayResult.data.rank);
+      } else {
+        console.log('❌ AJAY not found on production:', ajayResult.message);
+      }
+    } else {
+      console.log('❌ Failed to test AJAY on production');
+    }
+    
+    console.log('\n✅ Data pushed to production successfully!');
+    
   } catch (error) {
-    console.error('❌ Error getting production stats:', error.message);
+    console.error('Error pushing to production:', error);
   }
 };
 
-// Main function
-const main = async () => {
-  const command = process.argv[2];
-  
-  try {
-    switch (command) {
-      case 'push':
-        await pushResultsToProduction();
-        break;
-      case 'publish':
-        await publishResultsOnProduction();
-        break;
-      case 'stats':
-        await getProductionStats();
-        break;
-      case 'full':
-        await pushResultsToProduction();
-        await publishResultsOnProduction();
-        await getProductionStats();
-        break;
-      default:
-        console.log('Usage: node pushToProduction.js [push|publish|stats|full]');
-        console.log('  push    - Push local results to production');
-        console.log('  publish - Publish results on production');
-        console.log('  stats   - Get production statistics');
-        console.log('  full    - Push, publish, and show stats');
-        break;
-    }
-  } catch (error) {
-    console.error('❌ Error:', error.message);
-  } finally {
-    await mongoose.disconnect();
-    console.log('\n✅ Database connection closed');
-  }
-};
-
+// Run the push operation
 if (require.main === module) {
-  main();
+  pushToProduction();
 }
 
-module.exports = { pushResultsToProduction, publishResultsOnProduction, getProductionStats };
+module.exports = { pushToProduction };
