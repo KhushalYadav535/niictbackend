@@ -150,9 +150,12 @@ router.get('/top3/:subject?', async (req, res) => {
   try {
     const { subject } = req.params;
     
+    // Default to Computer subject if no subject specified
+    const targetSubject = subject && ['GK', 'Computer', 'Both'].includes(subject) ? subject : 'Computer';
+    
     let query = { isPublished: true };
-    if (subject && ['GK', 'Computer', 'Both'].includes(subject)) {
-      query.subject = subject;
+    if (targetSubject !== 'Both') {
+      query.subject = targetSubject;
     }
     
     const top3Results = await Result.find(query)
