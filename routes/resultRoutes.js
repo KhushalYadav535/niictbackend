@@ -15,17 +15,38 @@ router.get('/search/:rollNumber', async (req, res) => {
     }
 
     // Check if results are published
+    let searchRollNumber = rollNumber.toUpperCase().trim();
+    
+    // Convert GK to SK since all results are now SK
+    if (searchRollNumber.startsWith('GK')) {
+      searchRollNumber = 'SK' + searchRollNumber.substring(2);
+    } else if (!searchRollNumber.startsWith('SK')) {
+      // If no prefix, add SK prefix
+      searchRollNumber = 'SK' + searchRollNumber;
+    }
+    
     const publishedResults = await Result.findOne({ 
-      rollNumber: rollNumber.toUpperCase().trim(),
+      rollNumber: searchRollNumber,
       isPublished: true 
     });
 
     if (!publishedResults) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Results will be announced on 18th October at 12:00 PM. Please check back later.',
-        isPublished: false
-      });
+      // Check if any results are published at all
+      const anyPublishedResults = await Result.findOne({ isPublished: true });
+      
+      if (!anyPublishedResults) {
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Results will be announced on 18th October at 12:00 PM. Please check back later.',
+          isPublished: false
+        });
+      } else {
+        return res.status(404).json({ 
+          success: false, 
+          message: `No result found for roll number ${searchRollNumber}. Please check your roll number and try again.`,
+          isPublished: true
+        });
+      }
     }
 
     res.json({
