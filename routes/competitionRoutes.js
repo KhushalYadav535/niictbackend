@@ -3,6 +3,8 @@ const router = express.Router();
 const CompetitionApplication = require('../models/CompetitionApplication');
 const Counter = require('../models/Counter');
 
+const CURRENT_SESSION = '2026-2027'; // Update each year to match frontend
+
 // POST /api/competition-applications
 router.post('/', async (req, res) => {
   try {
@@ -18,7 +20,8 @@ router.post('/', async (req, res) => {
       aadhaar,
       dateOfBirth,
       classPassed,
-      image
+      image,
+      session
     } = req.body || {};
 
     // Basic validation aligned with frontend checks
@@ -66,9 +69,10 @@ router.post('/', async (req, res) => {
           classPassed,
           image,
           rollNumber,
-      paymentStatus: 'pending',
+          session: session || '2026-2027',
+          paymentStatus: 'pending',
           // Provide exam details to match UI expectations
-          examDate: '12 October 2025',
+          examDate: '12 October 2026',
           examTime: '10:00 AM',
           reportingTime: '8:00 AM',
           examCenter: 'S K Modern Intermediate College Semari Janghai Jaunpur'
@@ -111,10 +115,22 @@ router.get('/', async (req, res) => {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
-    const list = await CompetitionApplication.find().sort({ createdAt: -1 });
+    const { session } = req.query;
+    const filter = session ? { session } : {};
+    const list = await CompetitionApplication.find(filter).sort({ createdAt: -1 });
     res.json(list);
   } catch (err) {
     res.status(500).json({ message: 'Failed to fetch applications', error: err.message });
+  }
+});
+
+// GET /api/competition-applications/sessions — list all distinct sessions
+router.get('/sessions', async (req, res) => {
+  try {
+    const sessions = await CompetitionApplication.distinct('session');
+    res.json(sessions.filter(Boolean).sort().reverse()); // newest first
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch sessions', error: err.message });
   }
 });
 
@@ -133,27 +149,22 @@ router.delete('/:id', async (req, res) => {
 router.get('/aadhaar/:aadhaar', async (req, res) => {
   try {
     const { aadhaar } = req.params;
-    const { dob } = req.query;
-    
-    // Build query object
+    const { dob, session } = req.query;
+
     const query = { aadhaar };
-    
-    // If DOB is provided, add it to the query
+    // Session filter: default to current session, pass session=ALL to search all
+    if (session !== 'ALL') query.session = session || CURRENT_SESSION;
+
     if (dob) {
-      // Convert DOB string to Date object for comparison
       const dobDate = new Date(dob);
       query.dateOfBirth = {
         $gte: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate()),
         $lt: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate() + 1)
       };
     }
-    
+
     const application = await CompetitionApplication.findOne(query);
-    
-    if (!application) {
-      return res.status(404).json({ message: 'Application not found' });
-    }
-    
+    if (!application) return res.status(404).json({ message: 'Application not found' });
     res.json(application);
   } catch (err) {
     console.error('Aadhaar lookup error:', err);
@@ -165,42 +176,28 @@ router.get('/aadhaar/:aadhaar', async (req, res) => {
 router.get('/mobile/:mobile', async (req, res) => {
   try {
     const { mobile } = req.params;
-    const { dob } = req.query;
-    
-    if (!dob) {
-      return res.status(400).json({ message: 'Date of birth is required for mobile search' });
-    }
-    
-    // Normalize mobile number for search (remove leading zero if present)
+    const { dob, session } = req.query;
+
+    if (!dob) return res.status(400).json({ message: 'Date of birth is required for mobile search' });
+
     const normalizedMobile = mobile.startsWith('0') ? mobile.substring(1) : mobile;
-    
-    // Convert DOB string to Date object for comparison
     const dobDate = new Date(dob);
     const dobRange = {
       $gte: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate()),
       $lt: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate() + 1)
     };
-    
-    // Build query object - search with or without leading 0
-    const query = { 
+
+    const sessionFilter = session !== 'ALL' ? { session: session || CURRENT_SESSION } : {};
+    const query = {
+      ...sessionFilter,
       $and: [
         { dateOfBirth: dobRange },
-        {
-          $or: [
-            { phone: mobile },
-            { phone: normalizedMobile },
-            { phone: '0' + normalizedMobile }
-          ]
-        }
+        { $or: [{ phone: mobile }, { phone: normalizedMobile }, { phone: '0' + normalizedMobile }] }
       ]
     };
-    
+
     const application = await CompetitionApplication.findOne(query);
-    
-    if (!application) {
-      return res.status(404).json({ message: 'Application not found' });
-    }
-    
+    if (!application) return res.status(404).json({ message: 'Application not found' });
     res.json(application);
   } catch (err) {
     console.error('Mobile lookup error:', err);
@@ -212,30 +209,22 @@ router.get('/mobile/:mobile', async (req, res) => {
 router.get('/name/:name', async (req, res) => {
   try {
     const { name } = req.params;
-    const { dob } = req.query;
-    
-    if (!dob) {
-      return res.status(400).json({ message: 'Date of birth is required for name search' });
-    }
-    
-    // Build query object - case insensitive search
-    const query = { 
-      name: { $regex: decodeURIComponent(name), $options: 'i' }
-    };
-    
-    // Convert DOB string to Date object for comparison
+    const { dob, session } = req.query;
+
+    if (!dob) return res.status(400).json({ message: 'Date of birth is required for name search' });
+
     const dobDate = new Date(dob);
-    query.dateOfBirth = {
-      $gte: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate()),
-      $lt: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate() + 1)
+    const query = {
+      name: { $regex: decodeURIComponent(name), $options: 'i' },
+      dateOfBirth: {
+        $gte: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate()),
+        $lt: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate() + 1)
+      }
     };
-    
+    if (session !== 'ALL') query.session = session || CURRENT_SESSION;
+
     const application = await CompetitionApplication.findOne(query);
-    
-    if (!application) {
-      return res.status(404).json({ message: 'Application not found' });
-    }
-    
+    if (!application) return res.status(404).json({ message: 'Application not found' });
     res.json(application);
   } catch (err) {
     console.error('Name lookup error:', err);
@@ -246,36 +235,20 @@ router.get('/name/:name', async (req, res) => {
 // GET /api/competition-applications/name-phone
 router.get('/name-phone', async (req, res) => {
   try {
-    const { name, phone } = req.query;
-    
-    if (!name || !phone) {
-      return res.status(400).json({ message: 'Both name and phone number are required' });
-    }
-    
-    // Validate phone format - accept 10 or 11 digits (with or without leading 0)
-    if (!/^\d{10,11}$/.test(phone)) {
-      return res.status(400).json({ message: 'Please enter a valid 10 or 11-digit phone number' });
-    }
-    
-    // Normalize phone number for search (remove leading zero if present)
+    const { name, phone, session } = req.query;
+
+    if (!name || !phone) return res.status(400).json({ message: 'Both name and phone number are required' });
+    if (!/^\d{10,11}$/.test(phone)) return res.status(400).json({ message: 'Please enter a valid 10 or 11-digit phone number' });
+
     const normalizedPhone = phone.startsWith('0') ? phone.substring(1) : phone;
-    
-    // Build query object - case insensitive name search with phone match (with or without leading 0)
-    const query = { 
+    const query = {
       name: { $regex: decodeURIComponent(name), $options: 'i' },
-      $or: [
-        { phone: phone },
-        { phone: normalizedPhone },
-        { phone: '0' + normalizedPhone }
-      ]
+      $or: [{ phone }, { phone: normalizedPhone }, { phone: '0' + normalizedPhone }]
     };
-    
+    if (session !== 'ALL') query.session = session || CURRENT_SESSION;
+
     const application = await CompetitionApplication.findOne(query);
-    
-    if (!application) {
-      return res.status(404).json({ message: 'Application not found' });
-    }
-    
+    if (!application) return res.status(404).json({ message: 'Application not found' });
     res.json(application);
   } catch (err) {
     console.error('Name-phone lookup error:', err);
@@ -287,7 +260,7 @@ router.get('/name-phone', async (req, res) => {
 router.patch('/:id/payment', async (req, res) => {
   try {
     const { status } = req.body || {};
-    if (!['pending', 'verified'].includes(status)) {
+    if (!['pending', 'verified', 'paid', 'failed'].includes(status)) {
       return res.status(400).json({ message: 'Invalid payment status' });
     }
     const updated = await CompetitionApplication.findByIdAndUpdate(

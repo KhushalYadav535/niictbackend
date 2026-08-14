@@ -35,13 +35,13 @@ const storage = multer.memoryStorage();
 const upload = multer({ 
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
+    fileSize: 50 * 1024 * 1024 // 50MB limit
   },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
+    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) {
       cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'), false);
+      cb(new Error('Only image and video files are allowed'), false);
     }
   }
 });
@@ -218,6 +218,53 @@ router.post('/upload-image', upload.single('image'), async (req, res) => {
     console.error('Upload error:', error);
     res.status(500).json({ 
       message: 'Failed to upload image',
+      error: error.message 
+    });
+  }
+});
+
+// Upload media (image or video) route
+router.post('/upload-media', upload.single('media'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No media file provided' });
+    }
+
+    const publicId = `media_${Date.now()}`;
+    const folder = 'niict/courses';
+    const { signature, timestamp } = generateSignature({
+      folder: folder,
+      public_id: publicId
+    });
+
+    const result = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_stream(
+        {
+          folder: folder,
+          public_id: publicId,
+          signature: signature,
+          timestamp: timestamp,
+          resource_type: "auto", // Allow image or video
+          api_key: process.env.CLOUDINARY_API_KEY || '474711561275295'
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      ).end(req.file.buffer);
+    });
+
+    res.json({
+      success: true,
+      secure_url: result.secure_url,
+      public_id: result.public_id,
+      resource_type: result.resource_type
+    });
+
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ 
+      message: 'Failed to upload media',
       error: error.message 
     });
   }

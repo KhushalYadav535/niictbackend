@@ -15,8 +15,16 @@ const CompetitionApplicationSchema = new mongoose.Schema(
     classPassed: { type: String, required: true },
     image: { type: String, required: false },
     rollNumber: { type: String, required: true, unique: true },
-    paymentStatus: { type: String, enum: ['pending', 'verified'], default: 'pending' },
-    // Exam details (store simple strings to match UI text directly)
+    // Session identifier — e.g. "2025-2026", "2026-2027"
+    session: { type: String, default: '2025-2026' },
+    // Payment tracking
+    paymentStatus: { type: String, enum: ['pending', 'paid', 'failed', 'verified'], default: 'pending' },
+    paymentOrderId: { type: String },          // Cashfree order_id
+    paymentSessionId: { type: String },        // Cashfree payment_session_id
+    paymentTransactionId: { type: String },    // Cashfree transaction reference
+    paymentAmount: { type: Number, default: 150 },
+    paidAt: { type: Date },
+    // Exam details
     examDate: { type: String },
     examTime: { type: String },
     reportingTime: { type: String },
@@ -26,5 +34,3 @@ const CompetitionApplicationSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model('CompetitionApplication', CompetitionApplicationSchema);
-
-
