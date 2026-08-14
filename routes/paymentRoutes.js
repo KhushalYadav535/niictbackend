@@ -49,7 +49,7 @@ router.post('/create-order', async (req, res) => {
       },
       order_meta: {
         return_url: `${req.headers.origin || 'http://localhost:5173'}/competition-form?order_id=${orderId}`,
-        notify_url: `${req.headers.host || 'localhost:5000'}/api/payment/webhook`,
+        notify_url: `https://${req.headers.host || 'localhost:5000'}/api/payment/webhook`.replace('https://localhost', 'http://localhost'),
       },
       order_note: `NIICT GK Competition Registration - Roll No: ${app.rollNumber}`,
     };
