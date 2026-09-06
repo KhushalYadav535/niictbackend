@@ -2,19 +2,37 @@ const express = require('express');
 const router = express.Router();
 const CompetitionApplication = require('../models/CompetitionApplication');
 
-const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID;
-const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY;
-const IS_TEST = (process.env.CASHFREE_ENV || 'TEST') === 'TEST';
-const CF_BASE_URL = IS_TEST
-  ? 'https://sandbox.cashfree.com/pg'
-  : 'https://api.cashfree.com/pg';
-const CF_API_VERSION = '2023-08-01';
+// Dynamic Cashfree configuration helper
+const getCashfreeConfig = () => {
+  const rawAppId = process.env.CASHFREE_APP_ID || '';
+  const rawSecretKey = process.env.CASHFREE_SECRET_KEY || '';
+  const rawEnv = process.env.CASHFREE_ENV || 'PROD';
 
-const cfHeaders = {
-  'Content-Type': 'application/json',
-  'x-client-id': CASHFREE_APP_ID,
-  'x-client-secret': CASHFREE_SECRET_KEY,
-  'x-api-version': CF_API_VERSION,
+  // Strip accidental newlines, carriage returns, or spaces from dashboard copy-paste
+  const appId = rawAppId.replace(/[\r\n\s]+/g, '');
+  const secretKey = rawSecretKey.replace(/[\r\n\s]+/g, '');
+  const env = rawEnv.replace(/[\r\n\s]+/g, '').toUpperCase();
+  
+  // Test/Sandbox if appId starts with TEST or env is TEST/SANDBOX
+  const isTest = appId.startsWith('TEST') || env === 'TEST' || env === 'SANDBOX';
+  const baseUrl = isTest
+    ? 'https://sandbox.cashfree.com/pg'
+    : 'https://api.cashfree.com/pg';
+  const mode = isTest ? 'sandbox' : 'production';
+
+  return {
+    appId,
+    secretKey,
+    isTest,
+    mode,
+    baseUrl,
+    headers: {
+      'Content-Type': 'application/json',
+      'x-client-id': appId,
+      'x-client-secret': secretKey,
+      'x-api-version': '2023-08-01',
+    }
+  };
 };
 
 // -------------------------------------------------------------------
@@ -36,27 +54,32 @@ router.post('/create-order', async (req, res) => {
       return res.status(400).json({ message: 'Payment already completed for this application' });
     }
 
+    const cfConfig = getCashfreeConfig();
+
     // Build Cashfree order payload
     const orderId = `NIICT_COMP_${app.rollNumber}_${Date.now()}`;
+    const cleanPhone = (app.phone || '').replace(/\D/g, '').slice(-10) || '9999999999';
+    const origin = req.headers.origin || 'http://localhost:5173';
+
     const orderPayload = {
       order_id: orderId,
       order_amount: 150,
       order_currency: 'INR',
       customer_details: {
         customer_id: app._id.toString(),
-        customer_name: app.name,
-        customer_phone: app.phone.replace(/\D/g, '').slice(-10), // ensure 10 digits
+        customer_name: app.name || 'Candidate',
+        customer_phone: cleanPhone,
       },
       order_meta: {
-        return_url: `${req.headers.origin || 'http://localhost:5173'}/competition-form?order_id=${orderId}`,
+        return_url: `${origin}/competition?order_id=${orderId}&app_id=${app._id}`,
         notify_url: `https://${req.headers.host || 'localhost:5000'}/api/payment/webhook`.replace('https://localhost', 'http://localhost'),
       },
       order_note: `NIICT GK Competition Registration - Roll No: ${app.rollNumber}`,
     };
 
-    const cfRes = await fetch(`${CF_BASE_URL}/orders`, {
+    const cfRes = await fetch(`${cfConfig.baseUrl}/orders`, {
       method: 'POST',
-      headers: cfHeaders,
+      headers: cfConfig.headers,
       body: JSON.stringify(orderPayload),
     });
 
@@ -65,7 +88,7 @@ router.post('/create-order', async (req, res) => {
     if (!cfRes.ok) {
       console.error('Cashfree order creation failed:', cfData);
       return res.status(502).json({
-        message: 'Failed to create payment order',
+        message: cfData.message || 'Failed to create payment order',
         detail: cfData.message || JSON.stringify(cfData),
       });
     }
@@ -81,6 +104,7 @@ router.post('/create-order', async (req, res) => {
       orderId: cfData.order_id,
       paymentSessionId: cfData.payment_session_id,
       orderStatus: cfData.order_status,
+      cfMode: cfConfig.mode,
     });
   } catch (err) {
     console.error('create-order error:', err);
@@ -100,10 +124,12 @@ router.post('/verify', async (req, res) => {
       return res.status(400).json({ message: 'applicationId and orderId are required' });
     }
 
+    const cfConfig = getCashfreeConfig();
+
     // Fetch order payments from Cashfree
-    const cfRes = await fetch(`${CF_BASE_URL}/orders/${orderId}/payments`, {
+    const cfRes = await fetch(`${cfConfig.baseUrl}/orders/${orderId}/payments`, {
       method: 'GET',
-      headers: cfHeaders,
+      headers: cfConfig.headers,
     });
 
     const payments = await cfRes.json();
