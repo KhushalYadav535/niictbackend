@@ -59,7 +59,15 @@ router.post('/create-order', async (req, res) => {
     // Build Cashfree order payload
     const orderId = `NIICT_COMP_${app.rollNumber}_${Date.now()}`;
     const cleanPhone = (app.phone || '').replace(/\D/g, '').slice(-10) || '9999999999';
-    const origin = req.headers.origin || 'http://localhost:5173';
+    let origin = req.headers.origin || 'https://www.niict.in';
+    if (!cfConfig.isTest && origin.startsWith('http://')) {
+      origin = 'https://www.niict.in';
+    }
+
+    const host = req.headers.host || 'niictbackend.onrender.com';
+    const notifyUrl = (!cfConfig.isTest && host.includes('localhost'))
+      ? 'https://niictbackend.onrender.com/api/payment/webhook'
+      : `https://${host}/api/payment/webhook`;
 
     const orderPayload = {
       order_id: orderId,
@@ -72,7 +80,7 @@ router.post('/create-order', async (req, res) => {
       },
       order_meta: {
         return_url: `${origin}/competition?order_id=${orderId}&app_id=${app._id}`,
-        notify_url: `https://${req.headers.host || 'localhost:5000'}/api/payment/webhook`.replace('https://localhost', 'http://localhost'),
+        notify_url: notifyUrl,
       },
       order_note: `NIICT GK Competition Registration - Roll No: ${app.rollNumber}`,
     };
