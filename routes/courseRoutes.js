@@ -34,8 +34,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Update course
-router.patch('/:id', async (req, res) => {
+// Update course (PUT & PATCH)
+const updateCourseHandler = async (req, res) => {
   try {
     const course = await Course.findById(req.params.id);
     if (!course) return res.status(404).json({ message: 'Course not found' });
@@ -46,7 +46,10 @@ router.patch('/:id', async (req, res) => {
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
-});
+};
+
+router.put('/:id', updateCourseHandler);
+router.patch('/:id', updateCourseHandler);
 
 // Delete course
 router.delete('/:id', async (req, res) => {

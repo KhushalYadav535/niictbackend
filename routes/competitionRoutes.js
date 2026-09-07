@@ -29,13 +29,26 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    // Generate sequential roll number starting from 1001 (atomic)
+    // Generate sequential roll number starting from 1001 with NIICT prefix (e.g. NIICT1001, NIICT1234)
     const counterId = 'competition_roll';
     // Ensure counter exists and is aligned with current max rollNumber
     let counter = await Counter.findById(counterId);
     if (!counter) {
       const maxAgg = await CompetitionApplication.aggregate([
-        { $project: { rollNumInt: { $toInt: '$rollNumber' } } },
+        {
+          $project: {
+            cleanRoll: {
+              $replaceAll: { input: '$rollNumber', find: 'NIICT', replacement: '' }
+            }
+          }
+        },
+        {
+          $project: {
+            rollNumInt: {
+              $convert: { input: '$cleanRoll', to: 'int', onError: 0, onNull: 0 }
+            }
+          }
+        },
         { $sort: { rollNumInt: -1 } },
         { $limit: 1 }
       ]);
@@ -53,7 +66,8 @@ router.post('/', async (req, res) => {
     let lastErr;
     for (let i = 0; i < 10; i++) {
       const updated = await Counter.findByIdAndUpdate(counterId, { $inc: { seq: 1 } }, { new: true });
-      const rollNumber = String(1000 + (Number(updated.seq) || 0));
+      const seqNum = 1000 + (Number(updated.seq) || 0);
+      const rollNumber = `NIICT${seqNum}`;
       try {
         appDoc = await CompetitionApplication.create({
           name,
@@ -142,6 +156,35 @@ router.delete('/:id', async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ message: 'Failed to delete application', error: err.message });
+  }
+});
+
+// GET /api/competition-applications/roll/:rollNumber
+router.get('/roll/:rollNumber', async (req, res) => {
+  try {
+    const rawRoll = (req.params.rollNumber || '').trim();
+    if (!rawRoll) {
+      return res.status(400).json({ message: 'Roll number is required' });
+    }
+    const cleanNum = rawRoll.replace(/^[A-Za-z]+/, '');
+    const variants = [
+      rawRoll,
+      rawRoll.toUpperCase(),
+      `NIICT${cleanNum}`,
+      cleanNum
+    ].filter(Boolean);
+
+    const application = await CompetitionApplication.findOne({
+      rollNumber: { $in: variants }
+    });
+
+    if (!application) {
+      return res.status(404).json({ message: 'Application not found with this roll number' });
+    }
+    res.json(application);
+  } catch (err) {
+    console.error('Roll lookup error:', err);
+    res.status(500).json({ message: 'Failed to lookup application', error: err.message });
   }
 });
 

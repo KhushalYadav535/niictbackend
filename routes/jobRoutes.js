@@ -31,6 +31,17 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Update a job
+router.put('/:id', async (req, res) => {
+  try {
+    const updatedJob = await Job.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!updatedJob) return res.status(404).json({ message: 'Job not found' });
+    res.json(updatedJob);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
 // Delete a job
 router.delete('/:id', async (req, res) => {
   try {

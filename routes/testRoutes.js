@@ -35,4 +35,26 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Update a mock test (Admin)
+router.put('/:id', async (req, res) => {
+  try {
+    const updatedTest = await MockTest.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!updatedTest) return res.status(404).json({ message: 'Test not found' });
+    res.json(updatedTest);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Delete a mock test (Admin)
+router.delete('/:id', async (req, res) => {
+  try {
+    const deletedTest = await MockTest.findByIdAndDelete(req.params.id);
+    if (!deletedTest) return res.status(404).json({ message: 'Test not found' });
+    res.json({ message: 'Mock test deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;

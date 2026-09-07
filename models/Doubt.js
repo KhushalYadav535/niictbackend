@@ -8,6 +8,10 @@ const doubtSchema = new mongoose.Schema({
   upvotes: { type: Number, default: 0 },
   replies: { type: Number, default: 0 },
   hasFacultyReply: { type: Boolean, default: false },
+  facultyReply: { type: String, default: '' },
+  facultyName: { type: String, default: 'NIICT Faculty' },
+  repliedAt: { type: Date },
+  status: { type: String, enum: ['Open', 'Resolved'], default: 'Open' },
   createdAt: { type: Date, default: Date.now }
 });
 

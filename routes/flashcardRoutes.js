@@ -28,6 +28,17 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Update a flashcard
+router.put('/:id', async (req, res) => {
+  try {
+    const updatedFlashcard = await Flashcard.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!updatedFlashcard) return res.status(404).json({ message: 'Flashcard not found' });
+    res.json(updatedFlashcard);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
 // Delete a flashcard
 router.delete('/:id', async (req, res) => {
   try {

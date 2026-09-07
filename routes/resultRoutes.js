@@ -15,18 +15,20 @@ router.get('/search/:rollNumber', async (req, res) => {
     }
 
     // Check if results are published
-    let searchRollNumber = rollNumber.toUpperCase().trim();
-    
-    // Convert GK to SK since all results are now SK
-    if (searchRollNumber.startsWith('GK')) {
-      searchRollNumber = 'SK' + searchRollNumber.substring(2);
-    } else if (!searchRollNumber.startsWith('SK')) {
-      // If no prefix, add SK prefix
-      searchRollNumber = 'SK' + searchRollNumber;
-    }
-    
+    const cleanInput = rollNumber.toUpperCase().trim();
+    const numMatch = cleanInput.match(/\d+/);
+    const numPart = numMatch ? numMatch[0] : cleanInput;
+
+    const searchVariants = [
+      cleanInput,
+      `NIICT${numPart}`,
+      `GK${numPart}`,
+      `SK${numPart}`,
+      numPart
+    ];
+
     const publishedResults = await Result.findOne({ 
-      rollNumber: searchRollNumber,
+      rollNumber: { $in: searchVariants },
       isPublished: true 
     });
 

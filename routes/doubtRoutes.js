@@ -49,15 +49,49 @@ router.post('/', protect, async (req, res) => {
   }
 });
 
-// Upvote a doubt
-router.put('/:id/upvote', async (req, res) => {
+// Faculty / Admin reply to a doubt
+router.post('/:id/reply', async (req, res) => {
+  const { reply, facultyName } = req.body;
   try {
     const doubt = await Doubt.findById(req.params.id);
     if (!doubt) return res.status(404).json({ message: 'Doubt not found' });
-    
-    doubt.upvotes += 1;
-    await doubt.save();
-    res.json({ message: 'Upvoted', upvotes: doubt.upvotes });
+
+    doubt.facultyReply = reply;
+    doubt.facultyName = facultyName || 'NIICT Senior Faculty';
+    doubt.hasFacultyReply = true;
+    doubt.repliedAt = new Date();
+    doubt.status = 'Resolved';
+    doubt.replies = (doubt.replies || 0) + 1;
+
+    const updated = await doubt.save();
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Update doubt status
+router.put('/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    const doubt = await Doubt.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    );
+    if (!doubt) return res.status(404).json({ message: 'Doubt not found' });
+    res.json(doubt);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Delete a doubt (Admin)
+router.delete('/:id', async (req, res) => {
+  try {
+    const deleted = await Doubt.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ message: 'Doubt not found' });
+    res.json({ message: 'Doubt deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

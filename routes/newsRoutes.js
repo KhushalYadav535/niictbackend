@@ -29,6 +29,17 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Update a news item
+router.put('/:id', async (req, res) => {
+  try {
+    const updatedNews = await News.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!updatedNews) return res.status(404).json({ message: 'News not found' });
+    res.json(updatedNews);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
 // Delete a news item
 router.delete('/:id', async (req, res) => {
   try {

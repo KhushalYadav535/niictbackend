@@ -29,6 +29,17 @@ router.post('/', async (req, res) => {
   }
 });
 
+// Update a mentor
+router.put('/:id', async (req, res) => {
+  try {
+    const updatedMentor = await Mentor.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!updatedMentor) return res.status(404).json({ message: 'Mentor not found' });
+    res.json(updatedMentor);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
 // Delete a mentor
 router.delete('/:id', async (req, res) => {
   try {
