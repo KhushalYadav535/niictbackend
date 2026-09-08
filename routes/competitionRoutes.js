@@ -5,6 +5,35 @@ const Counter = require('../models/Counter');
 
 const CURRENT_SESSION = '2026-2027'; // Update each year to match frontend
 
+// Normalizes DOB string (e.g. "2006-06-01") to UTC midday (12:00:00Z) so timezone offset never flips day or month
+const parseDobToDate = (dob) => {
+  if (!dob) return null;
+  if (typeof dob === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dob)) {
+    const [y, m, d] = dob.slice(0, 10).split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  }
+  const dt = new Date(dob);
+  if (isNaN(dt.getTime())) return null;
+  return new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate(), 12, 0, 0));
+};
+
+// Generates a robust range for DOB query that accommodates legacy UTC midnight, local IST offset, and midday
+const getDobQueryRange = (dob) => {
+  if (!dob) return null;
+  if (typeof dob === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dob)) {
+    const [y, m, d] = dob.slice(0, 10).split('-').map(Number);
+    return {
+      $gte: new Date(Date.UTC(y, m - 1, d - 1, 12, 0, 0)),
+      $lte: new Date(Date.UTC(y, m - 1, d + 1, 12, 0, 0))
+    };
+  }
+  const dt = new Date(dob);
+  return {
+    $gte: new Date(dt.getTime() - 24 * 60 * 60 * 1000),
+    $lte: new Date(dt.getTime() + 24 * 60 * 60 * 1000)
+  };
+};
+
 // POST /api/competition-applications
 router.post('/', async (req, res) => {
   try {
@@ -79,7 +108,7 @@ router.post('/', async (req, res) => {
           address,
           subject: subject || 'GK',
           aadhaar,
-          dateOfBirth: new Date(dateOfBirth),
+          dateOfBirth: parseDobToDate(dateOfBirth) || new Date(dateOfBirth),
           classPassed,
           image,
           rollNumber,
@@ -199,11 +228,7 @@ router.get('/aadhaar/:aadhaar', async (req, res) => {
     if (session !== 'ALL') query.session = session || CURRENT_SESSION;
 
     if (dob) {
-      const dobDate = new Date(dob);
-      query.dateOfBirth = {
-        $gte: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate()),
-        $lt: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate() + 1)
-      };
+      query.dateOfBirth = getDobQueryRange(dob);
     }
 
     const application = await CompetitionApplication.findOne(query);
@@ -224,11 +249,7 @@ router.get('/mobile/:mobile', async (req, res) => {
     if (!dob) return res.status(400).json({ message: 'Date of birth is required for mobile search' });
 
     const normalizedMobile = mobile.startsWith('0') ? mobile.substring(1) : mobile;
-    const dobDate = new Date(dob);
-    const dobRange = {
-      $gte: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate()),
-      $lt: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate() + 1)
-    };
+    const dobRange = getDobQueryRange(dob);
 
     const sessionFilter = session !== 'ALL' ? { session: session || CURRENT_SESSION } : {};
     const query = {
@@ -256,13 +277,9 @@ router.get('/name/:name', async (req, res) => {
 
     if (!dob) return res.status(400).json({ message: 'Date of birth is required for name search' });
 
-    const dobDate = new Date(dob);
     const query = {
       name: { $regex: decodeURIComponent(name), $options: 'i' },
-      dateOfBirth: {
-        $gte: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate()),
-        $lt: new Date(dobDate.getFullYear(), dobDate.getMonth(), dobDate.getDate() + 1)
-      }
+      dateOfBirth: getDobQueryRange(dob)
     };
     if (session !== 'ALL') query.session = session || CURRENT_SESSION;
 
