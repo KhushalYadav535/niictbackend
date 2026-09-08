@@ -86,8 +86,8 @@ router.post('/', async (req, res) => {
           session: session || '2026-2027',
           paymentStatus: 'pending',
           // Provide exam details to match UI expectations
-          examDate: '12 October 2026',
-          examTime: '10:00 AM',
+          examDate: '18 October 2026',
+          examTime: '10:00 AM – 11:30 AM (90 Min)',
           reportingTime: '8:00 AM',
           examCenter: 'S K Modern Intermediate College Semari Janghai Jaunpur'
         });
