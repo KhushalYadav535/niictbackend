@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const CompetitionApplication = require('../models/CompetitionApplication');
+const CompetitionTempOrder = require('../models/CompetitionTempOrder');
+const competitionRouter = require('./competitionRoutes');
+const { generateNextRollNumber, parseDobToDate } = competitionRouter;
 
 // Dynamic Cashfree configuration helper
 const getCashfreeConfig = () => {
@@ -38,27 +41,38 @@ const getCashfreeConfig = () => {
 // -------------------------------------------------------------------
 // POST /api/payment/create-order
 // Creates a Cashfree order for the competition fee (₹150)
-// Body: { applicationId }
+// Body: { formData } (Zero-pending flow) OR { applicationId } (Legacy)
 // -------------------------------------------------------------------
 router.post('/create-order', async (req, res) => {
   try {
-    const { applicationId } = req.body;
-    if (!applicationId) {
-      return res.status(400).json({ message: 'applicationId is required' });
-    }
+    const { applicationId, formData } = req.body || {};
 
-    const app = await CompetitionApplication.findById(applicationId);
-    if (!app) return res.status(404).json({ message: 'Application not found' });
+    let candidateName = 'Candidate';
+    let cleanPhone = '9999999999';
+    let orderId;
 
-    if (app.paymentStatus === 'paid') {
-      return res.status(400).json({ message: 'Payment already completed for this application' });
+    if (formData) {
+      if (!formData.name || !formData.phone) {
+        return res.status(400).json({ message: 'Candidate name and phone are required' });
+      }
+      candidateName = formData.name.trim();
+      cleanPhone = (formData.phone || '').replace(/\D/g, '').slice(-10) || '9999999999';
+      orderId = `NIICT_COMP_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+    } else if (applicationId) {
+      const app = await CompetitionApplication.findById(applicationId);
+      if (!app) return res.status(404).json({ message: 'Application not found' });
+      if (app.paymentStatus === 'paid') {
+        return res.status(400).json({ message: 'Payment already completed for this application' });
+      }
+      candidateName = app.name || 'Candidate';
+      cleanPhone = (app.phone || '').replace(/\D/g, '').slice(-10) || '9999999999';
+      orderId = `NIICT_COMP_${app.rollNumber}_${Date.now()}`;
+    } else {
+      return res.status(400).json({ message: 'formData or applicationId is required' });
     }
 
     const cfConfig = getCashfreeConfig();
 
-    // Build Cashfree order payload
-    const orderId = `NIICT_COMP_${app.rollNumber}_${Date.now()}`;
-    const cleanPhone = (app.phone || '').replace(/\D/g, '').slice(-10) || '9999999999';
     let origin = req.headers.origin || 'https://www.niict.in';
     if (!cfConfig.isTest && origin.startsWith('http://')) {
       origin = 'https://www.niict.in';
@@ -69,20 +83,24 @@ router.post('/create-order', async (req, res) => {
       ? 'https://niictbackend.onrender.com/api/payment/webhook'
       : `https://${host}/api/payment/webhook`;
 
+    const returnUrl = applicationId
+      ? `${origin}/competition?order_id=${orderId}&app_id=${applicationId}`
+      : `${origin}/competition?order_id=${orderId}`;
+
     const orderPayload = {
       order_id: orderId,
       order_amount: 150,
       order_currency: 'INR',
       customer_details: {
-        customer_id: app._id.toString(),
-        customer_name: app.name || 'Candidate',
+        customer_id: cleanPhone,
+        customer_name: candidateName,
         customer_phone: cleanPhone,
       },
       order_meta: {
-        return_url: `${origin}/competition?order_id=${orderId}&app_id=${app._id}`,
+        return_url: returnUrl,
         notify_url: notifyUrl,
       },
-      order_note: `NIICT GK Competition Registration - Roll No: ${app.rollNumber}`,
+      order_note: `NIICT GK Competition Registration - ${candidateName}`,
     };
 
     const cfRes = await fetch(`${cfConfig.baseUrl}/orders`, {
@@ -101,12 +119,25 @@ router.post('/create-order', async (req, res) => {
       });
     }
 
-    // Save the order info to the application
-    await CompetitionApplication.findByIdAndUpdate(applicationId, {
-      paymentOrderId: cfData.order_id,
-      paymentSessionId: cfData.payment_session_id,
-      paymentAmount: 150,
-    });
+    if (formData) {
+      // Save temporary order only. NO CompetitionApplication is created!
+      await CompetitionTempOrder.create({
+        orderId: cfData.order_id,
+        paymentSessionId: cfData.payment_session_id,
+        amount: 150,
+        formData: {
+          ...formData,
+          dateOfBirth: parseDobToDate(formData.dateOfBirth) || new Date(formData.dateOfBirth)
+        },
+        status: 'created'
+      });
+    } else if (applicationId) {
+      await CompetitionApplication.findByIdAndUpdate(applicationId, {
+        paymentOrderId: cfData.order_id,
+        paymentSessionId: cfData.payment_session_id,
+        paymentAmount: 150,
+      });
+    }
 
     return res.json({
       orderId: cfData.order_id,
@@ -123,13 +154,13 @@ router.post('/create-order', async (req, res) => {
 // -------------------------------------------------------------------
 // POST /api/payment/verify
 // Verifies payment after Cashfree checkout completes
-// Body: { applicationId, orderId }
+// Body: { orderId, applicationId? }
 // -------------------------------------------------------------------
 router.post('/verify', async (req, res) => {
   try {
-    const { applicationId, orderId } = req.body;
-    if (!applicationId || !orderId) {
-      return res.status(400).json({ message: 'applicationId and orderId are required' });
+    const { applicationId, orderId } = req.body || {};
+    if (!orderId) {
+      return res.status(400).json({ message: 'orderId is required' });
     }
 
     const cfConfig = getCashfreeConfig();
@@ -153,36 +184,84 @@ router.post('/verify', async (req, res) => {
       : null;
 
     if (!successPayment) {
-      // Update as failed if all failed
-      const hasFailed = Array.isArray(payments) && payments.some(p => p.payment_status === 'FAILED');
-      if (hasFailed) {
-        await CompetitionApplication.findByIdAndUpdate(applicationId, {
-          paymentStatus: 'failed',
-        });
-        return res.status(400).json({ message: 'Payment failed or cancelled' });
+      if (applicationId) {
+        const hasFailed = Array.isArray(payments) && payments.some(p => p.payment_status === 'FAILED');
+        if (hasFailed) {
+          await CompetitionApplication.findByIdAndUpdate(applicationId, { paymentStatus: 'failed' });
+        }
       }
-      return res.status(400).json({ message: 'Payment not yet successful', payments });
+      return res.status(400).json({ message: 'Payment not successful or pending', payments });
     }
 
-    // Mark payment as paid in DB
-    const updated = await CompetitionApplication.findByIdAndUpdate(
-      applicationId,
-      {
-        paymentStatus: 'paid',
-        paymentTransactionId: successPayment.cf_payment_id?.toString() || successPayment.bank_reference || '',
-        paidAt: new Date(),
-        paymentAmount: successPayment.order_amount || 150,
-      },
-      { new: true }
-    );
+    // Check if application already created for this order
+    let existingApp = await CompetitionApplication.findOne({ paymentOrderId: orderId });
+    if (!existingApp && applicationId) {
+      existingApp = await CompetitionApplication.findById(applicationId);
+    }
 
-    if (!updated) return res.status(404).json({ message: 'Application not found' });
+    if (existingApp) {
+      const updated = await CompetitionApplication.findByIdAndUpdate(
+        existingApp._id,
+        {
+          paymentStatus: 'paid',
+          paymentTransactionId: successPayment.cf_payment_id?.toString() || successPayment.bank_reference || existingApp.paymentTransactionId || '',
+          paidAt: existingApp.paidAt || new Date(),
+          paymentAmount: successPayment.order_amount || 150,
+        },
+        { new: true }
+      );
+      return res.json({
+        success: true,
+        transactionId: updated.paymentTransactionId,
+        paidAt: updated.paidAt,
+        application: updated,
+      });
+    }
+
+    // If application doesn't exist yet, create it from CompetitionTempOrder!
+    const tempOrder = await CompetitionTempOrder.findOne({ orderId });
+    if (!tempOrder) {
+      return res.status(404).json({ message: 'Order registration details not found' });
+    }
+
+    const rollNumber = await generateNextRollNumber();
+    const fd = tempOrder.formData;
+    const newApp = await CompetitionApplication.create({
+      name: fd.name.trim(),
+      fatherName: fd.fatherName.trim(),
+      motherName: fd.motherName.trim(),
+      phone: fd.phone.trim(),
+      school: fd.school.trim(),
+      parentPhone: fd.parentPhone ? fd.parentPhone.trim() : '',
+      address: fd.address.trim(),
+      subject: fd.subject || 'GK',
+      aadhaar: fd.aadhaar ? fd.aadhaar.trim() : '',
+      dateOfBirth: fd.dateOfBirth,
+      classPassed: fd.classPassed.trim(),
+      image: fd.image || null,
+      rollNumber,
+      session: fd.session || '2026-2027',
+      paymentStatus: 'paid',
+      paymentOrderId: orderId,
+      paymentTransactionId: successPayment.cf_payment_id?.toString() || successPayment.bank_reference || '',
+      paymentAmount: successPayment.order_amount || 150,
+      paidAt: new Date(),
+      registrationType: 'online',
+      paymentMode: 'online',
+      examDate: '18 October 2026',
+      examTime: '10:00 AM – 11:30 AM (90 Min)',
+      reportingTime: '8:00 AM',
+      examCenter: 'S K Modern Intermediate College Semari Janghai Jaunpur'
+    });
+
+    tempOrder.status = 'completed';
+    await tempOrder.save();
 
     return res.json({
       success: true,
-      transactionId: updated.paymentTransactionId,
-      paidAt: updated.paidAt,
-      application: updated,
+      transactionId: newApp.paymentTransactionId,
+      paidAt: newApp.paidAt,
+      application: newApp,
     });
   } catch (err) {
     console.error('verify error:', err);
@@ -198,8 +277,43 @@ router.post('/webhook', async (req, res) => {
     const event = req.body;
     if (event?.data?.order?.order_status === 'PAID') {
       const orderId = event.data.order.order_id;
-      const app = await CompetitionApplication.findOne({ paymentOrderId: orderId });
-      if (app && app.paymentStatus !== 'paid') {
+      let app = await CompetitionApplication.findOne({ paymentOrderId: orderId });
+      if (!app) {
+        const tempOrder = await CompetitionTempOrder.findOne({ orderId });
+        if (tempOrder && tempOrder.status !== 'completed') {
+          const rollNumber = await generateNextRollNumber();
+          const fd = tempOrder.formData;
+          app = await CompetitionApplication.create({
+            name: fd.name.trim(),
+            fatherName: fd.fatherName.trim(),
+            motherName: fd.motherName.trim(),
+            phone: fd.phone.trim(),
+            school: fd.school.trim(),
+            parentPhone: fd.parentPhone ? fd.parentPhone.trim() : '',
+            address: fd.address.trim(),
+            subject: fd.subject || 'GK',
+            aadhaar: fd.aadhaar ? fd.aadhaar.trim() : '',
+            dateOfBirth: fd.dateOfBirth,
+            classPassed: fd.classPassed.trim(),
+            image: fd.image || null,
+            rollNumber,
+            session: fd.session || '2026-2027',
+            paymentStatus: 'paid',
+            paymentOrderId: orderId,
+            paymentTransactionId: event.data.payment?.cf_payment_id?.toString() || '',
+            paymentAmount: event.data.order?.order_amount || 150,
+            paidAt: new Date(),
+            registrationType: 'online',
+            paymentMode: 'online',
+            examDate: '18 October 2026',
+            examTime: '10:00 AM – 11:30 AM (90 Min)',
+            reportingTime: '8:00 AM',
+            examCenter: 'S K Modern Intermediate College Semari Janghai Jaunpur'
+          });
+          tempOrder.status = 'completed';
+          await tempOrder.save();
+        }
+      } else if (app.paymentStatus !== 'paid') {
         await CompetitionApplication.findByIdAndUpdate(app._id, {
           paymentStatus: 'paid',
           paymentTransactionId: event.data.payment?.cf_payment_id?.toString() || '',
@@ -213,6 +327,7 @@ router.post('/webhook', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // -------------------------------------------------------------------
 // GET /api/payment/status/:applicationId

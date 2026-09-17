@@ -24,6 +24,9 @@ const CompetitionApplicationSchema = new mongoose.Schema(
     paymentTransactionId: { type: String },    // Cashfree transaction reference
     paymentAmount: { type: Number, default: 150 },
     paidAt: { type: Date },
+    // Registration source & payment mode
+    registrationType: { type: String, enum: ['online', 'offline'], default: 'online' },
+    paymentMode: { type: String, default: 'online' }, // 'online', 'offline_cash', etc.
     // Exam details
     examDate: { type: String },
     examTime: { type: String },

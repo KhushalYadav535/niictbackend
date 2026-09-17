@@ -34,7 +34,111 @@ const getDobQueryRange = (dob) => {
   };
 };
 
-// POST /api/competition-applications
+// Generate sequential roll number starting from 1001 with NIICT prefix (e.g. NIICT1001, NIICT1234)
+const generateNextRollNumber = async () => {
+  const counterId = 'competition_roll';
+  let counter = await Counter.findById(counterId);
+  if (!counter) {
+    const maxAgg = await CompetitionApplication.aggregate([
+      {
+        $project: {
+          cleanRoll: {
+            $replaceAll: { input: '$rollNumber', find: 'NIICT', replacement: '' }
+          }
+        }
+      },
+      {
+        $project: {
+          rollNumInt: {
+            $convert: { input: '$cleanRoll', to: 'int', onError: 0, onNull: 0 }
+          }
+        }
+      },
+      { $sort: { rollNumInt: -1 } },
+      { $limit: 1 }
+    ]);
+    const maxExisting = (maxAgg && maxAgg[0] && maxAgg[0].rollNumInt) ? maxAgg[0].rollNumInt : 1000;
+    const baseSeq = Math.max(0, maxExisting - 1000);
+    try {
+      counter = await Counter.create({ _id: counterId, seq: baseSeq });
+    } catch (_) {
+      counter = await Counter.findById(counterId);
+    }
+  }
+
+  for (let i = 0; i < 15; i++) {
+    const updated = await Counter.findByIdAndUpdate(counterId, { $inc: { seq: 1 } }, { new: true });
+    const seqNum = 1000 + (Number(updated.seq) || 0);
+    const candidateRoll = `NIICT${seqNum}`;
+    const exists = await CompetitionApplication.findOne({ rollNumber: candidateRoll });
+    if (!exists) {
+      return candidateRoll;
+    }
+  }
+  throw new Error('Unable to allocate unique roll number after retries');
+};
+
+// POST /api/competition-applications/offline
+// Dedicated Admin-Only endpoint for Offline Candidate Registration
+// Automatically marks as Paid, offline, and sets paymentAmount: 0 so it DOES NOT add to online wallet balance
+router.post('/offline', async (req, res) => {
+  try {
+    const {
+      name,
+      fatherName,
+      motherName,
+      phone,
+      school,
+      parentPhone,
+      address,
+      subject,
+      aadhaar,
+      dateOfBirth,
+      classPassed,
+      image,
+      session
+    } = req.body || {};
+
+    if (!name || !fatherName || !motherName || !phone || !school || !address || !dateOfBirth || !classPassed) {
+      return res.status(400).json({ message: 'Missing required candidate fields' });
+    }
+
+    const rollNumber = await generateNextRollNumber();
+    const appDoc = await CompetitionApplication.create({
+      name: name.trim(),
+      fatherName: fatherName.trim(),
+      motherName: motherName.trim(),
+      phone: phone.trim(),
+      school: school.trim(),
+      parentPhone: parentPhone ? parentPhone.trim() : '',
+      address: address.trim(),
+      subject: subject || 'GK',
+      aadhaar: aadhaar ? aadhaar.trim() : '',
+      dateOfBirth: parseDobToDate(dateOfBirth) || new Date(dateOfBirth),
+      classPassed: classPassed.trim(),
+      image: image || null,
+      rollNumber,
+      session: session || CURRENT_SESSION,
+      paymentStatus: 'paid',
+      registrationType: 'offline',
+      paymentMode: 'offline_cash',
+      paymentAmount: 0, // Zero Rs added to online collection/wallet balance
+      paymentTransactionId: `OFFLINE_CASH_${Date.now()}`,
+      paidAt: new Date(),
+      examDate: '18 October 2026',
+      examTime: '10:00 AM – 11:30 AM (90 Min)',
+      reportingTime: '8:00 AM',
+      examCenter: 'S K Modern Intermediate College Semari Janghai Jaunpur'
+    });
+
+    return res.status(201).json(appDoc);
+  } catch (err) {
+    console.error('Offline competition registration error:', err);
+    return res.status(500).json({ message: 'Failed to create offline application', error: err.message });
+  }
+});
+
+// POST /api/competition-applications (Legacy/General endpoint)
 router.post('/', async (req, res) => {
   try {
     const {
@@ -58,85 +162,30 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
-    // Generate sequential roll number starting from 1001 with NIICT prefix (e.g. NIICT1001, NIICT1234)
-    const counterId = 'competition_roll';
-    // Ensure counter exists and is aligned with current max rollNumber
-    let counter = await Counter.findById(counterId);
-    if (!counter) {
-      const maxAgg = await CompetitionApplication.aggregate([
-        {
-          $project: {
-            cleanRoll: {
-              $replaceAll: { input: '$rollNumber', find: 'NIICT', replacement: '' }
-            }
-          }
-        },
-        {
-          $project: {
-            rollNumInt: {
-              $convert: { input: '$cleanRoll', to: 'int', onError: 0, onNull: 0 }
-            }
-          }
-        },
-        { $sort: { rollNumInt: -1 } },
-        { $limit: 1 }
-      ]);
-      const maxExisting = (maxAgg && maxAgg[0] && maxAgg[0].rollNumInt) ? maxAgg[0].rollNumInt : 1000;
-      const baseSeq = Math.max(0, maxExisting - 1000);
-      try {
-        counter = await Counter.create({ _id: counterId, seq: baseSeq });
-      } catch (_) {
-        counter = await Counter.findById(counterId);
-      }
-    }
-
-    // Attempt to persist with a short retry loop to avoid duplicate roll numbers
-    let appDoc;
-    let lastErr;
-    for (let i = 0; i < 10; i++) {
-      const updated = await Counter.findByIdAndUpdate(counterId, { $inc: { seq: 1 } }, { new: true });
-      const seqNum = 1000 + (Number(updated.seq) || 0);
-      const rollNumber = `NIICT${seqNum}`;
-      try {
-        appDoc = await CompetitionApplication.create({
-          name,
-          fatherName,
-          motherName,
-          phone,
-          school,
-          parentPhone,
-          address,
-          subject: subject || 'GK',
-          aadhaar,
-          dateOfBirth: parseDobToDate(dateOfBirth) || new Date(dateOfBirth),
-          classPassed,
-          image,
-          rollNumber,
-          session: session || '2026-2027',
-          paymentStatus: 'pending',
-          // Provide exam details to match UI expectations
-          examDate: '18 October 2026',
-          examTime: '10:00 AM – 11:30 AM (90 Min)',
-          reportingTime: '8:00 AM',
-          examCenter: 'S K Modern Intermediate College Semari Janghai Jaunpur'
-        });
-        lastErr = undefined;
-        break;
-      } catch (e) {
-        lastErr = e;
-        if (!(e && e.code === 11000)) {
-          // Non-duplicate error -> fail immediately
-          break;
-        }
-        // else loop continues to try next number
-      }
-    }
-    if (!appDoc) {
-      if (lastErr && lastErr.code === 11000) {
-        return res.status(409).json({ message: 'Duplicate roll number, please retry', error: lastErr.message });
-      }
-      throw lastErr || new Error('Unknown error creating application');
-    }
+    const rollNumber = await generateNextRollNumber();
+    const appDoc = await CompetitionApplication.create({
+      name: name.trim(),
+      fatherName: fatherName.trim(),
+      motherName: motherName.trim(),
+      phone: phone.trim(),
+      school: school.trim(),
+      parentPhone: parentPhone ? parentPhone.trim() : '',
+      address: address.trim(),
+      subject: subject || 'GK',
+      aadhaar: aadhaar ? aadhaar.trim() : '',
+      dateOfBirth: parseDobToDate(dateOfBirth) || new Date(dateOfBirth),
+      classPassed: classPassed.trim(),
+      image: image || null,
+      rollNumber,
+      session: session || CURRENT_SESSION,
+      paymentStatus: 'pending',
+      registrationType: 'online',
+      paymentMode: 'online',
+      examDate: '18 October 2026',
+      examTime: '10:00 AM – 11:30 AM (90 Min)',
+      reportingTime: '8:00 AM',
+      examCenter: 'S K Modern Intermediate College Semari Janghai Jaunpur'
+    });
 
     return res.status(201).json(appDoc);
   } catch (err) {
@@ -334,6 +383,10 @@ router.patch('/:id/payment', async (req, res) => {
     res.status(500).json({ message: 'Failed to update payment status', error: err.message });
   }
 });
+
+router.generateNextRollNumber = generateNextRollNumber;
+router.parseDobToDate = parseDobToDate;
+router.CURRENT_SESSION = CURRENT_SESSION;
 
 module.exports = router;
 
