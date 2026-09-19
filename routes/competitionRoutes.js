@@ -226,6 +226,60 @@ router.get('/sessions', async (req, res) => {
   }
 });
 
+// POST /api/competition-applications/bulk-delete
+router.post('/bulk-delete', async (req, res) => {
+  try {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: 'No application IDs provided for deletion' });
+    }
+
+    const result = await CompetitionApplication.deleteMany({ _id: { $in: ids } });
+    res.json({
+      success: true,
+      message: `Successfully deleted ${result.deletedCount} application(s)`,
+      deletedCount: result.deletedCount
+    });
+  } catch (err) {
+    console.error('Bulk delete competition applications error:', err);
+    res.status(500).json({ message: 'Failed to delete applications', error: err.message });
+  }
+});
+
+// POST /api/competition-applications/bulk-mark-paid
+// Marks multiple applications as offline paid (zero wallet addition)
+router.post('/bulk-mark-paid', async (req, res) => {
+  try {
+    const { ids, status = 'verified' } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: 'No application IDs provided' });
+    }
+
+    const now = new Date();
+    const result = await CompetitionApplication.updateMany(
+      { _id: { $in: ids } },
+      {
+        $set: {
+          paymentStatus: status,
+          registrationType: 'offline',
+          paymentMode: 'offline_cash',
+          paymentAmount: 0, // Zero Rs added to online collection/wallet balance
+          paidAt: now
+        }
+      }
+    );
+
+    res.json({
+      success: true,
+      message: `Successfully marked ${result.modifiedCount} application(s) as offline paid`,
+      modifiedCount: result.modifiedCount
+    });
+  } catch (err) {
+    console.error('Bulk mark paid error:', err);
+    res.status(500).json({ message: 'Failed to update applications', error: err.message });
+  }
+});
+
 // DELETE /api/competition-applications/:id
 router.delete('/:id', async (req, res) => {
   try {
@@ -372,12 +426,43 @@ router.patch('/:id/payment', async (req, res) => {
     if (!['pending', 'verified', 'paid', 'failed'].includes(status)) {
       return res.status(400).json({ message: 'Invalid payment status' });
     }
+
+    const app = await CompetitionApplication.findById(req.params.id);
+    if (!app) return res.status(404).json({ message: 'Application not found' });
+
+    const updateFields = { paymentStatus: status };
+
+    if (status === 'verified' || status === 'paid') {
+      // If manually verified/paid by admin and not an existing Cashfree online payment
+      const isOnlineCashfree = Boolean(
+        app.paymentOrderId && 
+        app.paymentTransactionId && 
+        !app.paymentTransactionId.startsWith('MANUAL_') && 
+        !app.paymentTransactionId.startsWith('OFFLINE_')
+      );
+
+      if (!isOnlineCashfree) {
+        // Mark as manual/offline verification so it DOES NOT add to online wallet balance
+        updateFields.registrationType = 'offline';
+        updateFields.paymentMode = 'offline_cash';
+        updateFields.paymentAmount = 0; // Zero Rs added to online collection/wallet balance
+        if (!app.paymentTransactionId) {
+          updateFields.paymentTransactionId = `MANUAL_ADMIN_${Date.now()}`;
+        }
+      }
+      if (!app.paidAt) {
+        updateFields.paidAt = new Date();
+      }
+    } else if (status === 'pending') {
+      updateFields.paidAt = null;
+      updateFields.paymentAmount = 0;
+    }
+
     const updated = await CompetitionApplication.findByIdAndUpdate(
       req.params.id,
-      { $set: { paymentStatus: status } },
+      { $set: updateFields },
       { new: true }
     );
-    if (!updated) return res.status(404).json({ message: 'Application not found' });
     res.json(updated);
   } catch (err) {
     res.status(500).json({ message: 'Failed to update payment status', error: err.message });
