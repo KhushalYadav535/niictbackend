@@ -78,6 +78,50 @@ const generateNextRollNumber = async () => {
   throw new Error('Unable to allocate unique roll number after retries');
 };
 
+// Checks if a candidate is older than 20 years (>20 years + 1 day)
+// Cutoff reference: 5 September 2026 or application date
+const isCandidateOverAge = (dob, applicationDate) => {
+  if (!dob) return false;
+  let by, bm, bd;
+  if (typeof dob === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dob)) {
+    [by, bm, bd] = dob.slice(0, 10).split('-').map(Number);
+  } else {
+    const dt = new Date(dob);
+    if (isNaN(dt.getTime())) return false;
+    by = dt.getUTCFullYear();
+    bm = dt.getUTCMonth() + 1;
+    bd = dt.getUTCDate();
+  }
+  const twentiethBirthday = new Date(Date.UTC(by + 20, bm - 1, bd, 0, 0, 0));
+  const cutoffDate = new Date(Date.UTC(2026, 8, 5, 0, 0, 0)); // 5 Sept 2026
+
+  if (twentiethBirthday < cutoffDate) return true;
+
+  if (applicationDate) {
+    const appDate = new Date(applicationDate);
+    if (!isNaN(appDate.getTime())) {
+      const appDateUtc = new Date(Date.UTC(appDate.getUTCFullYear(), appDate.getUTCMonth(), appDate.getUTCDate(), 0, 0, 0));
+      if (twentiethBirthday < appDateUtc) return true;
+    }
+  }
+
+  const today = new Date();
+  const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 0, 0, 0));
+  if (twentiethBirthday < todayUtc) return true;
+
+  return false;
+};
+
+const formatAppResponse = (doc) => {
+  if (!doc) return null;
+  const obj = doc.toObject ? doc.toObject() : { ...doc };
+  obj.isOverAge = isCandidateOverAge(obj.dateOfBirth, obj.createdAt);
+  if (obj.isOverAge) {
+    obj.ageNotice = 'Contact to NIICT Computer Institute Office - NIICT Computer Institute Janghai';
+  }
+  return obj;
+};
+
 // POST /api/competition-applications/offline
 // Dedicated Admin-Only endpoint for Offline Candidate Registration
 // Automatically marks as Paid, offline, and sets paymentAmount: 0 so it DOES NOT add to online wallet balance
@@ -210,7 +254,7 @@ router.get('/', async (req, res) => {
     const { session } = req.query;
     const filter = session ? { session } : {};
     const list = await CompetitionApplication.find(filter).sort({ createdAt: -1 });
-    res.json(list);
+    res.json(list.map(formatAppResponse));
   } catch (err) {
     res.status(500).json({ message: 'Failed to fetch applications', error: err.message });
   }
@@ -313,7 +357,7 @@ router.get('/roll/:rollNumber', async (req, res) => {
     if (!application) {
       return res.status(404).json({ message: 'Application not found with this roll number' });
     }
-    res.json(application);
+    res.json(formatAppResponse(application));
   } catch (err) {
     console.error('Roll lookup error:', err);
     res.status(500).json({ message: 'Failed to lookup application', error: err.message });
@@ -336,7 +380,7 @@ router.get('/aadhaar/:aadhaar', async (req, res) => {
 
     const application = await CompetitionApplication.findOne(query);
     if (!application) return res.status(404).json({ message: 'Application not found' });
-    res.json(application);
+    res.json(formatAppResponse(application));
   } catch (err) {
     console.error('Aadhaar lookup error:', err);
     res.status(500).json({ message: 'Failed to lookup application', error: err.message });
@@ -365,7 +409,7 @@ router.get('/mobile/:mobile', async (req, res) => {
 
     const application = await CompetitionApplication.findOne(query);
     if (!application) return res.status(404).json({ message: 'Application not found' });
-    res.json(application);
+    res.json(formatAppResponse(application));
   } catch (err) {
     console.error('Mobile lookup error:', err);
     res.status(500).json({ message: 'Failed to lookup application', error: err.message });
@@ -388,7 +432,7 @@ router.get('/name/:name', async (req, res) => {
 
     const application = await CompetitionApplication.findOne(query);
     if (!application) return res.status(404).json({ message: 'Application not found' });
-    res.json(application);
+    res.json(formatAppResponse(application));
   } catch (err) {
     console.error('Name lookup error:', err);
     res.status(500).json({ message: 'Failed to lookup application', error: err.message });
@@ -412,7 +456,7 @@ router.get('/name-phone', async (req, res) => {
 
     const application = await CompetitionApplication.findOne(query);
     if (!application) return res.status(404).json({ message: 'Application not found' });
-    res.json(application);
+    res.json(formatAppResponse(application));
   } catch (err) {
     console.error('Name-phone lookup error:', err);
     res.status(500).json({ message: 'Failed to lookup application', error: err.message });
