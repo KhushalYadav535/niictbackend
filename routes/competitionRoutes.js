@@ -513,6 +513,114 @@ router.patch('/:id/payment', async (req, res) => {
   }
 });
 
+// PUT & PATCH /api/competition-applications/:id
+// Update competition application details (Admin edit to fix mistakes)
+const updateCompetitionApplicationHandler = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await CompetitionApplication.findById(id);
+    if (!existing) {
+      return res.status(404).json({ message: 'Competition application not found' });
+    }
+
+    const {
+      name,
+      fatherName,
+      motherName,
+      phone,
+      parentPhone,
+      school,
+      address,
+      subject,
+      aadhaar,
+      dateOfBirth,
+      classPassed,
+      image,
+      session,
+      rollNumber,
+      paymentStatus,
+      registrationType,
+      paymentMode,
+      paymentAmount,
+      examDate,
+      examTime,
+      reportingTime,
+      examCenter
+    } = req.body || {};
+
+    const updateFields = {};
+    if (name !== undefined) updateFields.name = String(name).trim();
+    if (fatherName !== undefined) updateFields.fatherName = String(fatherName).trim();
+    if (motherName !== undefined) updateFields.motherName = String(motherName).trim();
+    if (phone !== undefined) updateFields.phone = String(phone).trim();
+    if (parentPhone !== undefined) updateFields.parentPhone = String(parentPhone || '').trim();
+    if (school !== undefined) updateFields.school = String(school).trim();
+    if (address !== undefined) updateFields.address = String(address).trim();
+    if (subject !== undefined) updateFields.subject = String(subject || 'GK').trim();
+    if (aadhaar !== undefined) updateFields.aadhaar = String(aadhaar || '').trim();
+    if (classPassed !== undefined) updateFields.classPassed = String(classPassed).trim();
+    if (session !== undefined) updateFields.session = String(session).trim();
+    if (image !== undefined) updateFields.image = image || null;
+
+    if (dateOfBirth) {
+      updateFields.dateOfBirth = parseDobToDate(dateOfBirth) || new Date(dateOfBirth);
+    }
+
+    if (paymentStatus !== undefined && ['pending', 'paid', 'verified', 'failed'].includes(paymentStatus)) {
+      updateFields.paymentStatus = paymentStatus;
+      if (paymentStatus === 'paid' || paymentStatus === 'verified') {
+        if (!existing.paidAt) {
+          updateFields.paidAt = new Date();
+        }
+      } else if (paymentStatus === 'pending') {
+        updateFields.paidAt = null;
+      }
+    }
+    if (registrationType !== undefined) updateFields.registrationType = registrationType;
+    if (paymentMode !== undefined) updateFields.paymentMode = paymentMode;
+    if (paymentAmount !== undefined && paymentAmount !== null && paymentAmount !== '') {
+      updateFields.paymentAmount = Number(paymentAmount) || 0;
+    }
+    if (examDate !== undefined) updateFields.examDate = examDate;
+    if (examTime !== undefined) updateFields.examTime = examTime;
+    if (reportingTime !== undefined) updateFields.reportingTime = reportingTime;
+    if (examCenter !== undefined) updateFields.examCenter = examCenter;
+
+    // Check if rollNumber is changed and verify uniqueness
+    if (rollNumber && String(rollNumber).trim() && String(rollNumber).trim() !== existing.rollNumber) {
+      const candidateRoll = String(rollNumber).trim();
+      const rollExists = await CompetitionApplication.findOne({
+        rollNumber: candidateRoll,
+        _id: { $ne: id }
+      });
+      if (rollExists) {
+        return res.status(400).json({ message: `Roll Number '${candidateRoll}' is already assigned to another candidate.` });
+      }
+      updateFields.rollNumber = candidateRoll;
+    }
+
+    const updated = await CompetitionApplication.findByIdAndUpdate(
+      id,
+      { $set: updateFields },
+      { new: true, runValidators: true }
+    );
+
+    return res.json(formatAppResponse(updated));
+  } catch (err) {
+    console.error('Update competition application error:', err);
+    if (err.code === 11000) {
+      return res.status(409).json({ message: 'Duplicate roll number error', error: err.message });
+    }
+    if (err && (err.name === 'ValidationError' || err.name === 'CastError')) {
+      return res.status(400).json({ message: 'Invalid data provided', error: err.message });
+    }
+    return res.status(500).json({ message: 'Failed to update application', error: err.message });
+  }
+};
+
+router.put('/:id', updateCompetitionApplicationHandler);
+router.patch('/:id', updateCompetitionApplicationHandler);
+
 router.generateNextRollNumber = generateNextRollNumber;
 router.parseDobToDate = parseDobToDate;
 router.CURRENT_SESSION = CURRENT_SESSION;
