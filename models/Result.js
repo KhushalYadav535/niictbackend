@@ -9,6 +9,11 @@ const ResultSchema = new mongoose.Schema(
       uppercase: true,
       trim: true
     },
+    numericRoll: {
+      type: String,
+      trim: true,
+      index: true
+    },
     name: { 
       type: String, 
       required: true,
@@ -27,13 +32,12 @@ const ResultSchema = new mongoose.Schema(
     subject: { 
       type: String, 
       required: true,
-      enum: ['GK', 'Computer', 'Both'],
       default: 'GK'
     },
     marks: { 
       type: Number, 
       required: true,
-      min: 0,
+      min: -100,
       max: 100
     },
     rank: { 
@@ -45,9 +49,13 @@ const ResultSchema = new mongoose.Schema(
       type: Date, 
       required: true
     },
+    session: {
+      type: String,
+      default: '2026-2027',
+      index: true
+    },
     status: { 
       type: String, 
-      enum: ['Passed', 'Failed'], 
       default: 'Passed'
     },
     class: { 
@@ -63,6 +71,22 @@ const ResultSchema = new mongoose.Schema(
     phone: { 
       type: String, 
       required: false,
+      trim: true,
+      index: true
+    },
+    aadhaar: {
+      type: String,
+      required: false,
+      trim: true,
+      index: true
+    },
+    dob: {
+      type: Date,
+      required: false
+    },
+    dobFormatted: {
+      type: String,
+      required: false,
       trim: true
     },
     address: { 
@@ -76,13 +100,10 @@ const ResultSchema = new mongoose.Schema(
       default: 100
     },
     percentage: { 
-      type: Number,
-      min: 0,
-      max: 100
+      type: Number
     },
     grade: { 
-      type: String,
-      enum: ['A+', 'A', 'B+', 'B', 'C+', 'C', 'D', 'F']
+      type: String
     },
     remarks: { 
       type: String,
@@ -91,7 +112,7 @@ const ResultSchema = new mongoose.Schema(
     // Metadata
     isPublished: { 
       type: Boolean, 
-      default: false 
+      default: true 
     },
     publishedAt: { 
       type: Date 
@@ -110,12 +131,14 @@ const ResultSchema = new mongoose.Schema(
 
 // Virtual for percentage calculation
 ResultSchema.virtual('calculatedPercentage').get(function() {
-  return Math.round((this.marks / this.totalMarks) * 100);
+  if (this.marks === null || this.marks === undefined || isNaN(this.marks)) return 0;
+  return Math.round((Math.max(0, this.marks) / (this.totalMarks || 100)) * 100);
 });
 
 // Virtual for grade calculation
 ResultSchema.virtual('calculatedGrade').get(function() {
   const percentage = this.calculatedPercentage;
+  if (this.status === 'Absent') return 'AB';
   if (percentage >= 90) return 'A+';
   if (percentage >= 80) return 'A';
   if (percentage >= 70) return 'B+';
@@ -132,13 +155,21 @@ ResultSchema.pre('save', function(next) {
     this.percentage = this.calculatedPercentage;
     this.grade = this.calculatedGrade;
   }
+  if (this.rollNumber && !this.numericRoll) {
+    const m = this.rollNumber.match(/\d+/);
+    if (m) this.numericRoll = m[0];
+  }
   next();
 });
 
 // Index for faster searches
 ResultSchema.index({ rollNumber: 1 });
+ResultSchema.index({ numericRoll: 1 });
+ResultSchema.index({ phone: 1 });
+ResultSchema.index({ aadhaar: 1 });
 ResultSchema.index({ subject: 1 });
 ResultSchema.index({ rank: 1 });
+ResultSchema.index({ session: 1 });
 ResultSchema.index({ isPublished: 1 });
 
 module.exports = mongoose.model('Result', ResultSchema);

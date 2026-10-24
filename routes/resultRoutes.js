@@ -1,59 +1,105 @@
 const express = require('express');
 const router = express.Router();
 const Result = require('../models/Result');
+const CompetitionApplication = require('../models/CompetitionApplication');
 
-// Get result by roll number (public endpoint)
-router.get('/search/:rollNumber', async (req, res) => {
+// Universal result search (public endpoint) - supports roll number, phone, aadhaar
+router.get('/search/:query', async (req, res) => {
   try {
-    const { rollNumber } = req.params;
+    const { query } = req.params;
+    const { dob } = req.query;
     
-    if (!rollNumber || rollNumber.trim() === '') {
+    if (!query || query.trim() === '') {
       return res.status(400).json({ 
         success: false, 
-        message: 'Roll number is required' 
+        message: 'Search query is required' 
       });
     }
 
-    // Check if results are published
-    const cleanInput = rollNumber.toUpperCase().trim();
+    const cleanInput = query.toUpperCase().trim();
     const numMatch = cleanInput.match(/\d+/);
-    const numPart = numMatch ? numMatch[0] : cleanInput;
+    const numPart = numMatch ? numMatch[0] : '';
 
-    const searchVariants = [
-      cleanInput,
-      `NIICT${numPart}`,
-      `GK${numPart}`,
-      `SK${numPart}`,
-      numPart
+    const orConditions = [
+      { rollNumber: cleanInput },
+      { rollNumber: `NIICT${cleanInput}` }
     ];
 
-    const publishedResults = await Result.findOne({ 
-      rollNumber: { $in: searchVariants },
-      isPublished: true 
-    });
+    if (numPart) {
+      orConditions.push(
+        { numericRoll: numPart },
+        { rollNumber: `NIICT${numPart}` },
+        { rollNumber: `GK${numPart}` },
+        { rollNumber: `SK${numPart}` },
+        { rollNumber: numPart }
+      );
+    }
 
-    if (!publishedResults) {
-      // Check if any results are published at all
-      const anyPublishedResults = await Result.findOne({ isPublished: true });
-      
-      if (!anyPublishedResults) {
-        return res.status(404).json({ 
-          success: false, 
-          message: 'Results will be announced on 18th October at 12:00 PM. Please check back later.',
-          isPublished: false
-        });
-      } else {
-        return res.status(404).json({ 
-          success: false, 
-          message: `No result found for roll number ${searchRollNumber}. Please check your roll number and try again.`,
+    // Phone search (10-digit)
+    if (/^\d{10}$/.test(cleanInput)) {
+      orConditions.push({ phone: cleanInput });
+    }
+
+    // Aadhaar search (12-digit)
+    if (/^\d{12}$/.test(cleanInput)) {
+      orConditions.push({ aadhaar: cleanInput });
+    }
+
+    // Try finding directly in Result collection (prefer newest session)
+    let publishedResult = await Result.findOne({ 
+      $or: orConditions,
+      isPublished: true 
+    }).sort({ session: -1, createdAt: -1 });
+
+    // Fallback: If not found directly, check CompetitionApplication to resolve student
+    if (!publishedResult) {
+      const appConditions = [
+        { rollNumber: cleanInput },
+        { rollNumber: `NIICT${cleanInput}` }
+      ];
+
+      if (numPart) {
+        appConditions.push(
+          { rollNumber: `NIICT${numPart}` },
+          { rollNumber: numPart }
+        );
+      }
+
+      if (/^\d{10}$/.test(cleanInput)) {
+        appConditions.push({ phone: cleanInput }, { parentPhone: cleanInput });
+      }
+
+      if (/^\d{12}$/.test(cleanInput)) {
+        appConditions.push({ aadhaar: cleanInput });
+      }
+
+      const matchedApp = await CompetitionApplication.findOne({ $or: appConditions });
+      if (matchedApp && matchedApp.rollNumber) {
+        const appRoll = matchedApp.rollNumber.toUpperCase().trim();
+        const appNum = (appRoll.match(/\d+/) || [])[0];
+        
+        publishedResult = await Result.findOne({
+          $or: [
+            { rollNumber: appRoll },
+            { numericRoll: appNum },
+            { rollNumber: `NIICT${appNum}` }
+          ],
           isPublished: true
         });
       }
     }
 
+    if (!publishedResult) {
+      return res.status(404).json({ 
+        success: false, 
+        message: `No result found for "${cleanInput}". Please verify your Roll Number, Mobile Number, or Aadhaar and try again.`,
+        isPublished: true
+      });
+    }
+
     res.json({
       success: true,
-      data: publishedResults,
+      data: publishedResult,
       message: 'Result found successfully'
     });
 
@@ -62,6 +108,108 @@ router.get('/search/:rollNumber', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Internal server error' 
+    });
+  }
+});
+
+// Comprehensive lookup endpoint (POST)
+router.post('/lookup', async (req, res) => {
+  try {
+    const { rollNumber, mobile, aadhaar, dob } = req.body;
+
+    if (!rollNumber && !mobile && !aadhaar) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide Roll Number, Mobile Number, or Aadhaar Number.'
+      });
+    }
+
+    let queryParam = '';
+    if (rollNumber && rollNumber.trim()) {
+      queryParam = rollNumber.trim();
+    } else if (mobile && mobile.trim()) {
+      queryParam = mobile.trim();
+    } else if (aadhaar && aadhaar.trim()) {
+      queryParam = aadhaar.trim();
+    }
+
+    const cleanInput = queryParam.toUpperCase().trim();
+    const numMatch = cleanInput.match(/\d+/);
+    const numPart = numMatch ? numMatch[0] : '';
+
+    const orConditions = [
+      { rollNumber: cleanInput },
+      { rollNumber: `NIICT${cleanInput}` }
+    ];
+
+    if (numPart) {
+      orConditions.push(
+        { numericRoll: numPart },
+        { rollNumber: `NIICT${numPart}` },
+        { rollNumber: `GK${numPart}` },
+        { rollNumber: `SK${numPart}` },
+        { rollNumber: numPart }
+      );
+    }
+
+    if (/^\d{10}$/.test(cleanInput)) {
+      orConditions.push({ phone: cleanInput });
+    }
+
+    if (/^\d{12}$/.test(cleanInput)) {
+      orConditions.push({ aadhaar: cleanInput });
+    }
+
+    let publishedResult = await Result.findOne({
+      $or: orConditions,
+      isPublished: true
+    }).sort({ session: -1, createdAt: -1 });
+
+    if (!publishedResult) {
+      const appConditions = [{ rollNumber: cleanInput }, { rollNumber: `NIICT${cleanInput}` }];
+      if (numPart) {
+        appConditions.push({ rollNumber: `NIICT${numPart}` }, { rollNumber: numPart });
+      }
+      if (/^\d{10}$/.test(cleanInput)) {
+        appConditions.push({ phone: cleanInput }, { parentPhone: cleanInput });
+      }
+      if (/^\d{12}$/.test(cleanInput)) {
+        appConditions.push({ aadhaar: cleanInput });
+      }
+
+      const matchedApp = await CompetitionApplication.findOne({ $or: appConditions });
+      if (matchedApp && matchedApp.rollNumber) {
+        const appRoll = matchedApp.rollNumber.toUpperCase().trim();
+        const appNum = (appRoll.match(/\d+/) || [])[0];
+        
+        publishedResult = await Result.findOne({
+          $or: [
+            { rollNumber: appRoll },
+            { numericRoll: appNum },
+            { rollNumber: `NIICT${appNum}` }
+          ],
+          isPublished: true
+        });
+      }
+    }
+
+    if (!publishedResult) {
+      return res.status(404).json({
+        success: false,
+        message: 'No result found matching your entered details. Please check and try again.'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: publishedResult,
+      message: 'Result found successfully'
+    });
+  } catch (error) {
+    console.error('Error in result lookup:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
     });
   }
 });
@@ -92,13 +240,6 @@ router.get('/all', async (req, res) => {
 router.get('/subject/:subject', async (req, res) => {
   try {
     const { subject } = req.params;
-    
-    if (!['GK', 'Computer', 'Both'].includes(subject)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid subject. Must be GK, Computer, or Both' 
-      });
-    }
 
     const results = await Result.find({ 
       subject: subject,
@@ -128,7 +269,7 @@ router.get('/top/:limit?', async (req, res) => {
     const limit = parseInt(req.params.limit) || 10;
     
     const topResults = await Result.find({ isPublished: true })
-      .sort({ rank: 1 })
+      .sort({ session: -1, rank: 1 })
       .limit(limit)
       .select('-__v');
 
@@ -147,23 +288,20 @@ router.get('/top/:limit?', async (req, res) => {
   }
 });
 
-// Get top 3 students by subject (public endpoint for result display)
+// Get top 3 students (public endpoint for result display)
 router.get('/top3/:subject?', async (req, res) => {
   try {
-    const { subject } = req.params;
-    
-    // Default to Computer subject if no subject specified
-    const targetSubject = subject && ['GK', 'Computer', 'Both'].includes(subject) ? subject : 'Computer';
-    
-    let query = { isPublished: true };
-    if (targetSubject !== 'Both') {
-      query.subject = targetSubject;
+    // Prefer Session 2026-2027 top 3
+    let query = { isPublished: true, session: '2026-2027' };
+    const count2026 = await Result.countDocuments(query);
+    if (count2026 === 0) {
+      delete query.session;
     }
     
     const top3Results = await Result.find(query)
-      .sort({ rank: 1 })
+      .sort({ rank: 1, marks: -1 })
       .limit(3)
-      .select('name fatherName rollNumber marks rank subject')
+      .select('name fatherName rollNumber marks rank subject phone status percentage grade school')
       .lean();
 
     res.json({
@@ -177,6 +315,36 @@ router.get('/top3/:subject?', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Internal server error' 
+    });
+  }
+});
+
+// Get top 10 students (public endpoint)
+router.get('/top10/:session?', async (req, res) => {
+  try {
+    const session = req.params.session || '2026-2027';
+    let query = { isPublished: true, session: session };
+    const count = await Result.countDocuments(query);
+    if (count === 0) {
+      delete query.session;
+    }
+
+    const top10Results = await Result.find(query)
+      .sort({ rank: 1, marks: -1 })
+      .limit(10)
+      .select('name fatherName rollNumber marks rank subject phone status percentage grade school')
+      .lean();
+
+    res.json({
+      success: true,
+      data: top10Results,
+      count: top10Results.length
+    });
+  } catch (error) {
+    console.error('Error fetching top 10 results:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
     });
   }
 });
