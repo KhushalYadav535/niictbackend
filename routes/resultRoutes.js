@@ -97,9 +97,14 @@ router.get('/search/:query', async (req, res) => {
       });
     }
 
+    const resultData = publishedResult.toObject ? publishedResult.toObject() : { ...publishedResult };
+    if (resultData.phone) {
+      resultData.phone = 'XXXXXX' + resultData.phone.slice(-4);
+    }
+
     res.json({
       success: true,
-      data: publishedResult,
+      data: resultData,
       message: 'Result found successfully'
     });
 
@@ -200,9 +205,14 @@ router.post('/lookup', async (req, res) => {
       });
     }
 
+    const resultData = publishedResult.toObject ? publishedResult.toObject() : { ...publishedResult };
+    if (resultData.phone) {
+      resultData.phone = 'XXXXXX' + resultData.phone.slice(-4);
+    }
+
     res.json({
       success: true,
-      data: publishedResult,
+      data: resultData,
       message: 'Result found successfully'
     });
   } catch (error) {
@@ -291,17 +301,17 @@ router.get('/top/:limit?', async (req, res) => {
 // Get top 3 students (public endpoint for result display)
 router.get('/top3/:subject?', async (req, res) => {
   try {
-    // Prefer Session 2026-2027 top 3
-    let query = { isPublished: true, session: '2026-2027' };
+    // Prefer Session 2026-2027 top 3 with valid numeric rank
+    let query = { isPublished: true, session: '2026-2027', rank: { $ne: null, $gte: 1 } };
     const count2026 = await Result.countDocuments(query);
     if (count2026 === 0) {
-      delete query.session;
+      query = { isPublished: true, rank: { $ne: null, $gte: 1 } };
     }
     
     const top3Results = await Result.find(query)
       .sort({ rank: 1, marks: -1 })
       .limit(3)
-      .select('name fatherName rollNumber marks rank subject phone status percentage grade school')
+      .select('name fatherName rollNumber marks rank subject status percentage grade school')
       .lean();
 
     res.json({
@@ -323,16 +333,16 @@ router.get('/top3/:subject?', async (req, res) => {
 router.get('/top10/:session?', async (req, res) => {
   try {
     const session = req.params.session || '2026-2027';
-    let query = { isPublished: true, session: session, rank: { $ne: null } };
+    let query = { isPublished: true, session: session, rank: { $ne: null, $gte: 1 } };
     const count = await Result.countDocuments(query);
     if (count === 0) {
-      delete query.session;
+      query = { isPublished: true, rank: { $ne: null, $gte: 1 } };
     }
 
     const top10Results = await Result.find(query)
       .sort({ rank: 1, marks: -1 })
       .limit(10)
-      .select('name fatherName rollNumber marks rank subject phone status percentage grade school')
+      .select('name fatherName rollNumber marks rank subject status percentage grade school')
       .lean();
 
     res.json({
@@ -353,16 +363,16 @@ router.get('/top10/:session?', async (req, res) => {
 router.get('/top20/:session?', async (req, res) => {
   try {
     const session = req.params.session || '2026-2027';
-    let query = { isPublished: true, session: session, rank: { $ne: null } };
+    let query = { isPublished: true, session: session, rank: { $ne: null, $gte: 1 } };
     const count = await Result.countDocuments(query);
     if (count === 0) {
-      delete query.session;
+      query = { isPublished: true, rank: { $ne: null, $gte: 1 } };
     }
 
     const top20Results = await Result.find(query)
       .sort({ rank: 1, marks: -1 })
       .limit(20)
-      .select('name fatherName rollNumber marks rank subject phone status percentage grade school')
+      .select('name fatherName rollNumber marks rank subject status percentage grade school')
       .lean();
 
     res.json({
@@ -378,6 +388,7 @@ router.get('/top20/:session?', async (req, res) => {
     });
   }
 });
+
 
 // Create/Update result (admin only)
 router.post('/create', async (req, res) => {
