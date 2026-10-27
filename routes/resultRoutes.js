@@ -29,8 +29,6 @@ router.get('/search/:query', async (req, res) => {
       orConditions.push(
         { numericRoll: numPart },
         { rollNumber: `NIICT${numPart}` },
-        { rollNumber: `GK${numPart}` },
-        { rollNumber: `SK${numPart}` },
         { rollNumber: numPart }
       );
     }
@@ -45,13 +43,14 @@ router.get('/search/:query', async (req, res) => {
       orConditions.push({ aadhaar: cleanInput });
     }
 
-    // Try finding directly in Result collection (prefer newest session)
+    // Strictly search Current Exam Session (2026-2027) published results only
     let publishedResult = await Result.findOne({ 
       $or: orConditions,
+      session: '2026-2027',
       isPublished: true 
-    }).sort({ session: -1, createdAt: -1 });
+    });
 
-    // Fallback: If not found directly, check CompetitionApplication to resolve student
+    // Fallback: If not found directly, check CompetitionApplication for session 2026-2027
     if (!publishedResult) {
       const appConditions = [
         { rollNumber: cleanInput },
@@ -84,6 +83,7 @@ router.get('/search/:query', async (req, res) => {
             { numericRoll: appNum },
             { rollNumber: `NIICT${appNum}` }
           ],
+          session: '2026-2027',
           isPublished: true
         });
       }
@@ -92,7 +92,7 @@ router.get('/search/:query', async (req, res) => {
     if (!publishedResult) {
       return res.status(404).json({ 
         success: false, 
-        message: `No result found for "${cleanInput}". Please verify your Roll Number, Mobile Number, or Aadhaar and try again.`,
+        message: `इस सत्र (2026-2027) में रोल नंबर / मोबाइल "${cleanInput}" का कोई रिजल्ट नहीं मिला। कृपया अपना सही रोल नंबर दर्ज करें।`,
         isPublished: true
       });
     }
@@ -151,8 +151,6 @@ router.post('/lookup', async (req, res) => {
       orConditions.push(
         { numericRoll: numPart },
         { rollNumber: `NIICT${numPart}` },
-        { rollNumber: `GK${numPart}` },
-        { rollNumber: `SK${numPart}` },
         { rollNumber: numPart }
       );
     }
@@ -167,8 +165,9 @@ router.post('/lookup', async (req, res) => {
 
     let publishedResult = await Result.findOne({
       $or: orConditions,
+      session: '2026-2027',
       isPublished: true
-    }).sort({ session: -1, createdAt: -1 });
+    });
 
     if (!publishedResult) {
       const appConditions = [{ rollNumber: cleanInput }, { rollNumber: `NIICT${cleanInput}` }];
@@ -193,6 +192,7 @@ router.post('/lookup', async (req, res) => {
             { numericRoll: appNum },
             { rollNumber: `NIICT${appNum}` }
           ],
+          session: '2026-2027',
           isPublished: true
         });
       }
@@ -201,7 +201,7 @@ router.post('/lookup', async (req, res) => {
     if (!publishedResult) {
       return res.status(404).json({
         success: false,
-        message: 'No result found matching your entered details. Please check and try again.'
+        message: 'इस सत्र (2026-2027) में दिए गए विवरण का कोई परिणाम नहीं मिला। कृपया वर्तमान सत्र का सही रोल नंबर दर्ज करें।'
       });
     }
 
