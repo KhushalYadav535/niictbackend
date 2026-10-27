@@ -323,7 +323,7 @@ router.get('/top3/:subject?', async (req, res) => {
 router.get('/top10/:session?', async (req, res) => {
   try {
     const session = req.params.session || '2026-2027';
-    let query = { isPublished: true, session: session };
+    let query = { isPublished: true, session: session, rank: { $ne: null } };
     const count = await Result.countDocuments(query);
     if (count === 0) {
       delete query.session;
@@ -342,6 +342,36 @@ router.get('/top10/:session?', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching top 10 results:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Get top 20 students (public endpoint for merit leaderboard)
+router.get('/top20/:session?', async (req, res) => {
+  try {
+    const session = req.params.session || '2026-2027';
+    let query = { isPublished: true, session: session, rank: { $ne: null } };
+    const count = await Result.countDocuments(query);
+    if (count === 0) {
+      delete query.session;
+    }
+
+    const top20Results = await Result.find(query)
+      .sort({ rank: 1, marks: -1 })
+      .limit(20)
+      .select('name fatherName rollNumber marks rank subject phone status percentage grade school')
+      .lean();
+
+    res.json({
+      success: true,
+      data: top20Results,
+      count: top20Results.length
+    });
+  } catch (error) {
+    console.error('Error fetching top 20 results:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

@@ -42,8 +42,8 @@ const ResultSchema = new mongoose.Schema(
     },
     rank: { 
       type: Number, 
-      required: true,
-      min: 1
+      required: false,
+      default: null
     },
     examDate: { 
       type: Date, 
